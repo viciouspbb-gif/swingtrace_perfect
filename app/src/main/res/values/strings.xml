@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">SwingTrace with AI Coaching</string>
+    <string name="ball_speed">ボール初速 (m/s)</string>
+    <string name="launch_angle">打ち出し角 (度)</string>
+    <string name="spin_rate">スピン量 (rpm)</string>
+    <string name="calculate">計算</string>
+    <string name="distance">飛距離</string>
+    <string name="max_height">最高到達点</string>
+    <string name="flight_time">滞空時間</string>
+    <string name="meters">m</string>
+    <string name="seconds">秒</string>
+</resources>
