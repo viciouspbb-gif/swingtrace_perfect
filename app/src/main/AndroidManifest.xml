@@ -36,7 +36,6 @@
         <activity
             android:name=".NewMainActivity"
             android:exported="true"
-            android:screenOrientation="landscape"
             android:theme="@style/Theme.GolfTrajectoryApp">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

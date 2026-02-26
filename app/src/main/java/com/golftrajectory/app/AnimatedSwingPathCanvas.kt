@@ -10,6 +10,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 
+private val PRACTICE_GREEN = Color(0xFF00FF66)
+
 /**
  * アニメーション付きスイング軌道Canvas
  */
