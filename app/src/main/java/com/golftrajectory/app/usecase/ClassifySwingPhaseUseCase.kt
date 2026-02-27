@@ -1,13 +1,14 @@
 package com.golftrajectory.app.usecase
 
-import com.google.ai.client.generativeai.GenerativeModel
-import com.google.ai.client.generativeai.type.content
+import com.golftrajectory.app.ai.AIServiceRepository
+import com.golftrajectory.app.ai.PlanUpgradeRequired
+import javax.inject.Inject
 
 /**
  * スイングフェーズ分類UseCase
  */
-class ClassifySwingPhaseUseCase(
-    private val geminiApiKey: String
+class ClassifySwingPhaseUseCase @Inject constructor(
+    private val aiServiceRepository: AIServiceRepository
 ) {
     
     enum class SwingPhase {
@@ -16,30 +17,24 @@ class ClassifySwingPhaseUseCase(
         FOLLOW      // フォロー
     }
     
-    private val model = GenerativeModel(
-        modelName = "gemini-2.0-flash-exp",
-        apiKey = geminiApiKey
-    )
-    
     /**
-     * Gemini APIでスイングフェーズを分類
+     * スイングフェーズを分類
      */
-    suspend fun classifyWithGemini(
-        trajectory: List<RecordTrajectoryUseCase.FrameData>
-    ): Result<List<SwingPhase>> {
+    suspend fun classify(swingData: String): Result<SwingPhase> {
         return try {
-            val prompt = buildPrompt(trajectory)
-            
-            val response = model.generateContent(
-                content { text(prompt) }
-            )
-            
-            val phases = parsePhases(response.text ?: "")
-            Result.success(phases)
-            
+            val result = aiServiceRepository.classifyPhase(swingData)
+            result.map { phaseName ->
+                when (phaseName.trim().uppercase()) {
+                    "TAKEBACK" -> SwingPhase.TAKEBACK
+                    "DOWNSWING" -> SwingPhase.DOWNSWING
+                    "FOLLOW" -> SwingPhase.FOLLOW
+                    else -> SwingPhase.TAKEBACK
+                }
+            }
+        } catch (e: PlanUpgradeRequired) {
+            Result.failure(e)
         } catch (e: Exception) {
-            // Gemini失敗時はローカル判定にフォールバック
-            Result.success(classifyLocally(trajectory))
+            Result.failure(e)
         }
     }
     

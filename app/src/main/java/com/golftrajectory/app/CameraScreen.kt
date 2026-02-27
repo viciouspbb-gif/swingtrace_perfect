@@ -1,5 +1,8 @@
 package com.golftrajectory.app
 
+import com.golftrajectory.app.plan.Plan
+import com.golftrajectory.app.plan.UserPlanManager
+import com.golftrajectory.app.pose.PoseLandmarkerHelper
 import android.content.ContentValues
 import android.content.Context
 import android.content.res.Configuration
@@ -831,7 +834,8 @@ fun CameraContent(
                                 }
                             }
                         isRecording = true
-                        if (AppConfig.isPractice()) {
+                        val planManager = UserPlanManager.getInstance(context)
+                        if (planManager.getCurrentPlan().isPractice()) {
                             recorderLimitJob?.cancel()
                             recorderLimitJob = scope.launch {
                                 delay(15_000)

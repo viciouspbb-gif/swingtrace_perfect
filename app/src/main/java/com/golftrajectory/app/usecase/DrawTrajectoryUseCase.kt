@@ -1,13 +1,15 @@
 package com.golftrajectory.app.usecase
 
 import androidx.compose.ui.graphics.Color
-import com.golftrajectory.app.AppConfig
+import com.golftrajectory.app.plan.UserPlanManager
 import kotlin.math.hypot
 
 /**
  * 軌道描画UseCase
  */
-class DrawTrajectoryUseCase {
+class DrawTrajectoryUseCase(
+    private val userPlanManager: UserPlanManager
+) {
     
     data class DrawablePoint(
         val x: Float,
@@ -28,8 +30,8 @@ class DrawTrajectoryUseCase {
             val phase = phases.getOrNull(index - 1) ?: ClassifySwingPhaseUseCase.SwingPhase.TAKEBACK
             val baseColor = phaseToColor(phase)
             val color = when {
-                AppConfig.isPractice() -> PRACTICE_COLOR
-                AppConfig.isAthlete() -> determineAthleteColor(index, trajectory, phases, baseColor)
+                userPlanManager.getCurrentPlan().isPractice() -> PRACTICE_COLOR
+                userPlanManager.getCurrentPlan().isAthlete() -> determineAthleteColor(index, trajectory, phases, baseColor)
                 else -> baseColor
             }
             

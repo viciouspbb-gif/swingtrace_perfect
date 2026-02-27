@@ -1,33 +1,228 @@
-package com.swingtrace.aicoaching.screens
+package com.golftrajectory.app.screens
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.golftrajectory.app.AppConfig
-import com.swingtrace.aicoaching.ai.CoachingStyle
+import androidx.navigation.NavController
+import com.golftrajectory.app.plan.Plan
+import com.golftrajectory.app.plan.UserPlanManager
+import kotlinx.coroutines.launch
 
-/**
- * 設定画面
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
-    currentCoachingStyle: CoachingStyle,
-    onCoachingStyleChange: (CoachingStyle) -> Unit,
-    onBack: () -> Unit
+    navController: NavController
 ) {
+    val context = LocalContext.current
+    val planManager = remember { UserPlanManager.getInstance(context) }
+    val scope = rememberCoroutineScope()
+    
+    val currentPlan by planManager.planFlow.collectAsState(initial = Plan.PRACTICE)
+    val useCloud by planManager.useCloudFlow.collectAsState(initial = false)
+    
     Scaffold(
         topBar = {
             TopAppBar(
+                title = { Text("設定") },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "戻る")
+                    }
+                }
+            )
+        }
+    ) { paddingValues ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp)
+        ) {
+            // プラン設定
+            Text(
+                text = "プラン設定",
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold
+            )
+            
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            Text(
+                text = "現在のプラン: ${planManager.getPlanDisplayName()}",
+                fontSize = 16.sp
+            )
+            
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            // プラン切り替えボタン（デバッグ用）
+            if (BuildConfig.DEBUG) {
+                Text(
+                    text = "デバッグ: プラン切り替え",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                planManager.setPlan(Plan.PRACTICE)
+                            }
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("PRACTICE")
+                    }
+                    
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                planManager.setPlan(Plan.ATHLETE)
+                            }
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("ATHLETE")
+                    }
+                    
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                planManager.setPlan(Plan.PRO)
+                            }
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("PRO")
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+            
+            // PROプランのクラウド設定
+            if (currentPlan.isPro()) {
+                Text(
+                    text = "クラウド解析",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("クラウド機能を使用")
+                    
+                    Switch(
+                        checked = useCloud,
+                        onCheckedChange = { enabled ->
+                            scope.launch {
+                                planManager.setUseCloud(enabled)
+                            }
+                        }
+                    )
+                }
+                
+                if (useCloud) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "クラウド解析が有効です",
+                        color = MaterialTheme.colorScheme.primary,
+                        fontSize = 14.sp
+                    )
+                }
+                
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+            
+            // アップグレード案内
+            if (currentPlan.isPractice()) {
+                Card(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp)
+                    ) {
+                        Text(
+                            text = "ATHLETEプランにアップグレード",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        
+                        Spacer(modifier = Modifier.height(8.dp))
+                        
+                        Text("• 3色スコア表示")
+                        Text("• 全関節トラッキング")
+                        Text("• AIコーチフル機能")
+                        
+                        Spacer(modifier = Modifier.height(12.dp))
+                        
+                        Button(
+                            onClick = {
+                                // TODO: アップグレード画面へ遷移
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("アップグレード")
+                        }
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(16.dp))
+            } else if (currentPlan.isAthlete()) {
+                Card(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp)
+                    ) {
+                        Text(
+                            text = "PROプランにアップグレード",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        
+                        Spacer(modifier = Modifier.height(8.dp))
+                        
+                        Text("• クラウド解析")
+                        Text("• ヘッド軌道分析")
+                        Text("• シャフトプレーン")
+                        Text("• 専属AIコーチ")
+                        
+                        Spacer(modifier = Modifier.height(12.dp))
+                        
+                        Button(
+                            onClick = {
+                                // TODO: アップグレード画面へ遷移
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("アップグレード")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
                 title = { Text("設定") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {

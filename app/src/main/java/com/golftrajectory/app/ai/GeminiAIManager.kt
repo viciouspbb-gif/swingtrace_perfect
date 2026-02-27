@@ -3,7 +3,6 @@ package com.swingtrace.aicoaching.ai
 import android.content.Context
 import android.util.Log
 import com.swingtrace.aicoaching.BuildConfig
-import com.google.ai.client.generativeai.GenerativeModel
 import com.google.ai.client.generativeai.type.content
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -100,12 +99,6 @@ class GeminiAIManager(private val context: Context) {
     }
 }
 
-    private val apiKey: String = BuildConfig.GEMINI_API_KEY
-    private val generativeModel = GenerativeModel(
-        modelName = "gemini-pro",  // SDK 0.9.0互換モデル
-        apiKey = apiKey
-    )
-    
     // OkHttpクライアント（タイムアウト設定）
     private val okHttpClient = okhttp3.OkHttpClient.Builder()
         .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)

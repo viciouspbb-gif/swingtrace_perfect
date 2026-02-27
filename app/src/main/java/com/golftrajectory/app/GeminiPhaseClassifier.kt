@@ -1,53 +1,46 @@
 package com.golftrajectory.app
 
-import com.google.ai.client.generativeai.GenerativeModel
-import com.google.ai.client.generativeai.type.content
+import com.golftrajectory.app.ai.AIServiceRepository
+import com.golftrajectory.app.ai.PlanUpgradeRequired
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import javax.inject.Inject
 
 /**
- * Gemini APIを使用したスイングフェーズ分類補助
+ * Geminiによるフェーズ分類
  */
-class GeminiPhaseClassifier(
-    private val apiKey: String
+@Serializable
+data class PhaseClassification(
+    val phase: String,
+    val confidence: Float,
+    val reasoning: String
+)
+
+class GeminiPhaseClassifier @Inject constructor(
+    private val aiServiceRepository: AIServiceRepository
 ) {
     
-    private val model = GenerativeModel(
-        modelName = "gemini-2.0-flash-exp",
-        apiKey = apiKey
-    )
+    private val json = Json { ignoreUnknownKeys = true }
     
-    @Serializable
-    data class PhaseClassificationRequest(
-        val trajectoryPoints: List<TrajectoryPointData>
-    )
-    
-    @Serializable
-    data class TrajectoryPointData(
-        val x: Float,
-        val y: Float,
-        val timestamp: Long,
-        val velocity: VelocityData,
-        val acceleration: AccelerationData
-    )
-    
-    @Serializable
-    data class VelocityData(
-        val vx: Float,
-        val vy: Float,
-        val speed: Float
-    )
-    
-    @Serializable
-    data class AccelerationData(
-        val ax: Float,
-        val ay: Float,
-        val magnitude: Float
-    )
-    
-    @Serializable
-    data class PhaseClassificationResult(
-        val phases: List<PhaseSegment>,
+    /**
+     * スイングデータからフェーズを分類
+     */
+    suspend fun classifyPhase(swingData: String): Result<PhaseClassification> {
+        return try {
+            val result = aiServiceRepository.classifyPhase(swingData)
+            result.map { phaseName ->
+                PhaseClassification(
+                    phase = phaseName,
+                    confidence = 0.8f,
+                    reasoning = "AIによる分類"
+                )
+            }
+        } catch (e: PlanUpgradeRequired) {
+            Result.failure(e)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
         val confidence: Float,
         val analysis: String
     )

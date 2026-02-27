@@ -30,6 +30,9 @@ android {
             .trim()
         buildConfigField("String", "GEMINI_API_KEY", "\"$geminiApiKey\"")
 
+        // Build Variants: a_practice を最優先で選択
+        missingDimensionStrategy("version", "a_practice", "b_athlete", "c_pro")
+
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
             useSupportLibrary = true
@@ -43,6 +46,26 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+        }
+    }
+
+    flavorDimensions += "version"
+
+    productFlavors {
+        create("a_practice") {
+            dimension = "version"
+            buildConfigField("boolean", "IS_PRACTICE_MODE", "true")
+            resValue("string", "mode_label", "PRACTICE")
+        }
+        create("b_athlete") {
+            dimension = "version"
+            buildConfigField("boolean", "IS_PRACTICE_MODE", "false")
+            resValue("string", "mode_label", "ATHLETE")
+        }
+        create("c_pro") {
+            dimension = "version"
+            buildConfigField("boolean", "IS_PRACTICE_MODE", "false")
+            resValue("string", "mode_label", "PRO")
         }
     }
     

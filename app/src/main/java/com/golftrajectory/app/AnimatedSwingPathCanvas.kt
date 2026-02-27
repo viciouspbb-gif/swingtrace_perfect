@@ -9,6 +9,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import com.golftrajectory.app.plan.Plan
+import com.golftrajectory.app.plan.UserPlanManager
 
 private val PRACTICE_GREEN = Color(0xFF00FF66)
 
@@ -26,7 +28,10 @@ fun AnimatedSwingPathCanvas(
     showScore: Boolean = false,
     score: Float? = null
 ) {
-    val isPracticeMode = AppConfig.isPractice()
+    val context = LocalContext.current
+    val planManager = remember { UserPlanManager.getInstance(context) }
+    val currentPlan by planManager.planFlow.collectAsState(initial = Plan.PRACTICE)
+    val isPracticeMode = currentPlan.isPractice()
 
     val animatedProgress = remember { Animatable(0f) }
     
@@ -191,7 +196,10 @@ fun PlayableSwingPathCanvas(
     onPlaybackComplete: () -> Unit = {}
 ) {
     var playbackProgress by remember { mutableStateOf(0f) }
-    val isPracticeMode = AppConfig.isPractice()
+    val context = LocalContext.current
+    val planManager = remember { UserPlanManager.getInstance(context) }
+    val currentPlan by planManager.planFlow.collectAsState(initial = Plan.PRACTICE)
+    val isPracticeMode = currentPlan.isPractice()
     
     LaunchedEffect(isPlaying) {
         if (isPlaying && pathPoints.isNotEmpty()) {

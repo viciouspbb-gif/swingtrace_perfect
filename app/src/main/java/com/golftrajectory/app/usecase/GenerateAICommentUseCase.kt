@@ -1,13 +1,14 @@
 package com.golftrajectory.app.usecase
 
-import com.google.ai.client.generativeai.GenerativeModel
-import com.google.ai.client.generativeai.type.generationConfig
+import com.golftrajectory.app.ai.AIServiceRepository
+import com.golftrajectory.app.ai.PlanUpgradeRequired
+import javax.inject.Inject
 
 /**
- * Gemini AIでスイングコメント生成UseCase
+ * AIコメント生成UseCase
  */
-class GenerateAICommentUseCase(
-    private val geminiApiKey: String
+class GenerateAICommentUseCase @Inject constructor(
+    private val aiServiceRepository: AIServiceRepository
 ) {
     
     data class AiComment(
@@ -15,19 +16,6 @@ class GenerateAICommentUseCase(
         val improvement: String,
         val advice: String
     )
-    
-    private val model by lazy {
-        GenerativeModel(
-            modelName = "gemini-1.5-flash",
-            apiKey = geminiApiKey,
-            generationConfig = generationConfig {
-                temperature = 0.7f
-                topK = 40
-                topP = 0.95f
-                maxOutputTokens = 500
-            }
-        )
-    }
     
     /**
      * スイング分析結果からAIコメントを生成
@@ -39,11 +27,13 @@ class GenerateAICommentUseCase(
     ): Result<AiComment> {
         return try {
             val prompt = buildPrompt(score, shoulderAngle, hipAngle)
-            val response = model.generateContent(prompt)
-            val text = response.text ?: return Result.failure(Exception("レスポンスが空です"))
+            val response = aiServiceRepository.generateComment(prompt, "swing")
+            val text = response ?: return Result.failure(Exception("レスポンスが空です"))
             
             val comment = parseResponse(text)
             Result.success(comment)
+        } catch (e: PlanUpgradeRequired) {
+            Result.failure(e)
         } catch (e: Exception) {
             Result.failure(e)
         }

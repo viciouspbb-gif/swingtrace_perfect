@@ -1,6 +1,7 @@
 package com.swingtrace.aicoaching.ai
 
-import com.golftrajectory.app.AppConfig
+import com.golftrajectory.app.plan.Plan
+import com.golftrajectory.app.plan.UserPlanManager
 import com.swingtrace.aicoaching.analysis.ProSimilarityCalculator
 import com.swingtrace.aicoaching.domain.usecase.SwingData
 
@@ -8,7 +9,8 @@ import com.swingtrace.aicoaching.domain.usecase.SwingData
  * AIコーチ会話管理
  */
 class AICoachConversationManager(
-    private val geminiAIManager: GeminiAIManager
+    private val geminiAIManager: GeminiAIManager,
+    private val userPlanManager: UserPlanManager
 ) {
     
     /**
@@ -543,12 +545,12 @@ class AICoachConversationManager(
     }
 
     private fun limitOptionsForMode(options: List<ConversationOption>?): List<ConversationOption>? {
-        if (!AppConfig.isPractice()) return options
+        if (!userPlanManager.getCurrentPlan().isPractice()) return options
         return options?.firstOrNull()?.let { listOf(it) }
     }
 
     private fun CoachResponse.applyModeLimit(): CoachResponse {
-        if (!AppConfig.isPractice()) return this
+        if (!userPlanManager.getCurrentPlan().isPractice()) return this
         return copy(options = options?.firstOrNull()?.let { listOf(it) })
     }
 }
