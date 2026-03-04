@@ -95,18 +95,33 @@ private fun MetricGaugeRow(
         }
         Spacer(modifier = Modifier.height(4.dp))
         
-        // Custom Gauge Bar
-        Box(
+        // ゲージの描画領域
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(6.dp)
                 .clip(RoundedCornerShape(3.dp))
                 .background(Color.DarkGray)
         ) {
+            val totalWidth = maxWidth
+            
+            // 1. 理想範囲（Target Zone）の背景ハイライト
+            val targetStartRatio = ((targetMin - displayMin) / (displayMax - displayMin)).coerceIn(0f, 1f)
+            val targetWidthRatio = ((targetMax - targetMin) / (displayMax - displayMin)).coerceIn(0f, 1f)
+            
+            Box(
+                modifier = Modifier
+                    .offset(x = totalWidth * targetStartRatio)
+                    .width(totalWidth * targetWidthRatio)
+                    .fillMaxHeight()
+                    .background(Color.White.copy(alpha = 0.25f)) // 薄い白で目標範囲を示す
+            )
+            
+            // 2. 現在値のプログレスバー
             Box(
                 modifier = Modifier
                     .fillMaxWidth(ratio)
-                    .height(6.dp)
+                    .fillMaxHeight()
                     .background(barColor)
             )
         }
