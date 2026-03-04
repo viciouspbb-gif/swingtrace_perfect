@@ -327,23 +327,19 @@ fun SwingPoseAnalysisScreen(
                                     result.shoulderRotation in 25f..75f -> Color(0xFFFFC107)
                                     else -> Color(0xFFF44336)
                                 }
-                                "hip" -> when {
-                                    result.hipRotation in 25f..50f -> Color(0xFF4CAF50)
-                                    result.hipRotation in 15f..60f -> Color(0xFFFFC107)
-                                    else -> Color(0xFFF44336)
-                                }
-                                "arm" -> if (result.downswingSpeed >= 40) Color(0xFF4CAF50) 
-                                         else if (result.downswingSpeed >= 20) Color(0xFFFFC107)
-                                         else Color(0xFFF44336)
-                                "leg" -> when {
-                                    result.weightTransfer in 20f..60f -> Color(0xFF4CAF50)
-                                    result.weightTransfer in 10f..70f -> Color(0xFFFFC107)
-                                    else -> Color(0xFFF44336)
-                                }
                                 else -> Color(0xFF4CAF50)
                             }
                         }
-                        return Color(0xFF4CAF50) // デフォルトは緑
+                        // バイオメカニクスデータに基づく動的色決定
+                        biomechanicsData?.let { frame ->
+                            return when (partType) {
+                                "hip" -> if (frame.isStable) Color.Green else Color.Red
+                                "spine" -> if (frame.spineAngleDegrees in 25f..50f) Color.Cyan else Color.Yellow
+                                "shoulder" -> if (frame.xFactorDegrees in 30f..60f) Color.Green else Color(0xFFFF9800)
+                                else -> Color(0xFF4CAF50)
+                            }
+                        }
+                        return Color(0xFF4CAF50)
                     }
                     
                     // MediaPipe Poseの骨格接続（部位別）
@@ -416,14 +412,14 @@ fun SwingPoseAnalysisScreen(
                         }
                     }
                     
-                    // 胴体（デフォルト緑）
+                    // 背骨（Spine Angleに基づく色）
                     bodyConnections.forEach { (start, end) ->
                         if (start < scaledPoints.size && end < scaledPoints.size) {
                             drawLine(
-                                color = Color(0xFF4CAF50),
+                                color = getPartColor("spine"),
                                 start = scaledPoints[start],
                                 end = scaledPoints[end],
-                                strokeWidth = 6f
+                                strokeWidth = 8f
                             )
                         }
                     }
