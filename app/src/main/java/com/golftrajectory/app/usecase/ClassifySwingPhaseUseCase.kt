@@ -22,7 +22,8 @@ class ClassifySwingPhaseUseCase @Inject constructor(
      */
     suspend fun classify(swingData: String): Result<SwingPhase> {
         return try {
-            val result = aiServiceRepository.classifyPhase(swingData)
+            val trajectoryList = swingData.split(",").map { it.trim() }
+            val result = aiServiceRepository.classifyPhase(trajectoryList)
             result.map { phaseName ->
                 when (phaseName.trim().uppercase()) {
                     "TAKEBACK" -> SwingPhase.TAKEBACK

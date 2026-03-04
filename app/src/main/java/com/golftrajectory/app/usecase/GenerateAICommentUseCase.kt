@@ -27,11 +27,11 @@ class GenerateAICommentUseCase @Inject constructor(
     ): Result<AiComment> {
         return try {
             val prompt = buildPrompt(score, shoulderAngle, hipAngle)
-            val response = aiServiceRepository.generateComment(prompt, "swing")
-            val text = response ?: return Result.failure(Exception("レスポンスが空です"))
-            
-            val comment = parseResponse(text)
-            Result.success(comment)
+            val response = aiServiceRepository.generateComment(prompt, listOf("swing"))
+            response.getOrNull()?.let { text ->
+                val comment = parseResponse(text)
+                Result.success(comment)
+            } ?: Result.failure(Exception("レスポンスが空です"))
         } catch (e: PlanUpgradeRequired) {
             Result.failure(e)
         } catch (e: Exception) {

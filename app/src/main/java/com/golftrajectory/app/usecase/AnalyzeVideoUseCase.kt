@@ -95,8 +95,10 @@ class AnalyzeVideoUseCase(
                 retriever.release()
                 
                 // フェーズ分類
-                val phases = if (useGemini) {
-                    classifySwingPhaseUseCase.classifyWithGemini(trajectory)
+                val phases: List<ClassifySwingPhaseUseCase.SwingPhase> = if (useGemini) {
+                    val trajectoryString = trajectory.joinToString(",") { "${it.x},${it.y}" }
+                    classifySwingPhaseUseCase.classify(trajectoryString)
+                        .map { phase -> List(trajectory.size) { phase } }
                         .getOrElse {
                             classifySwingPhaseUseCase.classifyLocally(trajectory)
                         }

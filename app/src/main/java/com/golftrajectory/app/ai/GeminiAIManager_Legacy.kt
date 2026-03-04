@@ -39,7 +39,10 @@ class GeminiAIManager @Inject constructor(
                 }
                 else -> {
                     // ATHLETE/PROはAIServiceRepository経由で実行
-                    val result = aiServiceRepository.generateComment(swingData, "swing")
+                    val result = aiServiceRepository.generateComment(
+                        phase = "swing",
+                        trajectory = listOf(swingData)
+                    )
                     result.getOrElse { "分析に失敗しました" }
                 }
             }
@@ -63,7 +66,10 @@ class GeminiAIManager @Inject constructor(
                     "AIコーチはATHLETEプラン以上で利用できます"
                 }
                 else -> {
-                    val result = aiServiceRepository.chatWithCoach("こんにちは")
+                    val result = aiServiceRepository.chatWithCoach(
+                        message = "こんにちは",
+                        history = emptyList()
+                    )
                     result.getOrElse { "応答できませんでした" }
                 }
             }
@@ -87,7 +93,10 @@ class GeminiAIManager @Inject constructor(
                     "AIコーチはATHLETEプラン以上で利用できます"
                 }
                 else -> {
-                    val result = aiServiceRepository.chatWithCoach(message)
+                    val result = aiServiceRepository.chatWithCoach(
+                        message = message,
+                        history = emptyList()
+                    )
                     result.getOrElse { "応答できませんでした" }
                 }
             }
