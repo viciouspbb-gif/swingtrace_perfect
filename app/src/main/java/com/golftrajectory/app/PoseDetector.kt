@@ -15,6 +15,8 @@ import com.golftrajectory.app.analysis.AnalysisEngineAuditor
 import com.golftrajectory.app.performance.PerformanceLogger
 import com.golftrajectory.app.performance.PoseModelSelector
 import com.golftrajectory.app.performance.PoseModelSelector.PoseModel
+import com.golftrajectory.app.logic.BiomechanicsEngine
+import com.golftrajectory.app.logic.BiomechanicsFrame
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import androidx.camera.core.ImageProxy
@@ -31,8 +33,11 @@ class PoseDetector(private val context: Context) {
     private var selectedModel: PoseModel? = null
     private var useGpuDelegate = true
     
-    // LIVE_STREAM 用のコールバックフロー
-    private val _poseResultFlow = MutableSharedFlow<PoseLandmarkerResult>(extraBufferCapacity = 10)
+    // BiomechanicsEngine instance
+    private val biomechanicsEngine = BiomechanicsEngine()
+    
+    // LIVE_STREAM 用のコールバックフロー（BiomechanicsFrameを含む）
+    private val _poseResultFlow = MutableSharedFlow<Pair<PoseLandmarkerResult, BiomechanicsFrame?>>(extraBufferCapacity = 10)
     val poseResultFlow = _poseResultFlow.asSharedFlow()
     
     init {
@@ -98,11 +103,17 @@ class PoseDetector(private val context: Context) {
                 
             val options = PoseLandmarkerOptions.builder()
                 .setBaseOptions(baseOptions)
-                .setRunningMode(RunningMode.IMAGE)
+                .setRunningMode(RunningMode.LIVE_STREAM)
                 .setNumPoses(1)
                 .setMinPoseDetectionConfidence(0.5f)
                 .setMinPosePresenceConfidence(0.5f)
                 .setMinTrackingConfidence(0.5f)
+                .setResultListener { result, input ->
+                    processResult(result, input)
+                }
+                .setErrorListener { error: RuntimeException ->
+                    Log.e(TAG, "Pose detection error: $error")
+                }
                 .build()
                 
             poseLandmarker?.close()
@@ -122,6 +133,32 @@ class PoseDetector(private val context: Context) {
         } catch (e: Exception) {
             Log.e(TAG, "MediaPipe Pose Landmarker初期化失敗(${model.modelName}): ${e.message}", e)
             throw e
+        }
+    }
+    
+    /**
+     * Process pose detection results and compute biomechanics
+     */
+    private fun processResult(result: PoseLandmarkerResult, input: MPImage) {
+        val finishTimeMs = SystemClock.uptimeMillis()
+        val inferenceTime = finishTimeMs - result.timestampMs()
+
+        // 1. worldLandmarks の抽出とバイオメカニクス解析の実行
+        var biomechanicsFrame: BiomechanicsFrame? = null
+        if (result.worldLandmarks().isNotEmpty()) {
+            // 最初の人物のランドマークを使用
+            val landmarks = result.worldLandmarks()[0]
+            biomechanicsFrame = biomechanicsEngine.analyzeFrame(landmarks, result.timestampMs())
+            
+            // デバッグログ: 解析結果の出力
+            Log.i(TAG, "Biomechanics - X-Factor: ${"%.1f".format(biomechanicsFrame.xFactorDegrees)}°, SpineAngle: ${"%.1f".format(biomechanicsFrame.spineAngleDegrees)}°, Stable: ${biomechanicsFrame.isStable}")
+        }
+
+        // 2. フロー経由で上位層へ発火
+        try {
+            _poseResultFlow.tryEmit(Pair(result, biomechanicsFrame))
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to emit pose result: ${e.message}")
         }
     }
     
