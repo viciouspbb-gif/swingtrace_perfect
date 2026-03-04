@@ -213,16 +213,16 @@ fun AICoachingScreen(
                     proSimilarity = proSimilarity,
                     previousScore = previousScore
                 )
-                messages = listOf(ChatMessage("model", response.message))
+                messages = listOf(ChatMessage(id = "model", text = response.message, isUser = false))
                 currentOptions = response.options
             } else {
                 // 通常の挨拶
                 val greeting = "こんにちは！ゴルフコーチAIです。🏌️\n\nスイングについて何でも質問してください。\n\n例えば：\n• バックスイングの改善方法\n• 飛距離を伸ばすコツ\n• スイングの基本\n\nなど、お気軽にどうぞ！"
-                messages = listOf(ChatMessage("model", greeting))
+                messages = listOf(ChatMessage(id = "model", text = greeting, isUser = false))
             }
         } catch (e: Exception) {
             android.util.Log.e("AICoachingScreen", "Error initializing chat", e)
-            messages = listOf(ChatMessage("model", "チャットの初期化に失敗しました。もう一度お試しください。"))
+            messages = listOf(ChatMessage(id = "model", text = "チャットの初期化に失敗しました。もう一度お試しください。", isUser = false))
         }
     }
     
@@ -596,8 +596,8 @@ fun MessageBubble(message: ChatMessage) {
  */
 @Composable
 fun ConversationOptions(
-    options: List<AICoachConversationManager.ConversationOption>,
-    onOptionClick: (AICoachConversationManager.ConversationOption) -> Unit
+    options: List<ConversationOption>,
+    onOptionClick: (ConversationOption) -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -614,7 +614,7 @@ fun ConversationOptions(
                 )
             ) {
                 Text(
-                    text = "${option.icon} ${option.text}",
+                    text = option.text,
                     style = MaterialTheme.typography.bodyLarge,
                     modifier = Modifier.padding(vertical = 8.dp)
                 )

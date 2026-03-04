@@ -2,7 +2,7 @@ package com.golftrajectory.app.ai
 
 import android.content.Context
 import android.util.Log
-import com.golftrajectory.app.BuildConfig
+import com.swingtrace.aicoaching.BuildConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 

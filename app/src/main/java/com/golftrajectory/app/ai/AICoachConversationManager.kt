@@ -1,7 +1,9 @@
-package com.swingtrace.aicoaching.ai
+package com.golftrajectory.app.ai
 
 import com.golftrajectory.app.plan.Plan
 import com.golftrajectory.app.plan.UserPlanManager
+import com.golftrajectory.app.ai.CoachingStyle
+import com.golftrajectory.app.ai.GeminiAIManager
 import com.swingtrace.aicoaching.analysis.ProSimilarityCalculator
 import com.swingtrace.aicoaching.domain.usecase.SwingData
 
