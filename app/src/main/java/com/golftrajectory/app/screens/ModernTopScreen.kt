@@ -61,8 +61,11 @@ import com.golftrajectory.app.plan.Plan
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
+import android.net.Uri
 import com.golftrajectory.app.plan.LitePlanAdBanner
 import com.golftrajectory.app.plan.UserPlanManager
+import com.golftrajectory.app.utils.LockScreenOrientation
+import android.content.pm.ActivityInfo
 
 /**
  * モダンなトップ画面
@@ -77,18 +80,20 @@ fun ModernTopScreen(
     userPlanManager: UserPlanManager,
     onCameraClick: () -> Unit,
     onSmartAIAnalysisClick: () -> Unit,
-    onRearSwingClick: () -> Unit,
-    onFrontSwingClick: () -> Unit,
-    onClubHeadTrackingClick: () -> Unit,
-    onAICoachClick: () -> Unit,
-    onComparisonClick: () -> Unit,
-    onHistoryClick: () -> Unit,
-    onPremiumClick: () -> Unit,
-    onSettingsClick: () -> Unit,
-    onLogout: () -> Unit,
-    onRequestPlanSwitch: () -> Unit,
+    onRearSwingClick: (Uri) -> Unit = {},
+    onFrontSwingClick: (Uri) -> Unit = {},
+    onClubHeadTrackingClick: () -> Unit = {},
+    onAICoachClick: () -> Unit = {},
+    onComparisonClick: () -> Unit = {},
+    onHistoryClick: () -> Unit = {},
+    onPremiumClick: () -> Unit = {},
+    onSettingsClick: () -> Unit = {},
+    onLogout: () -> Unit = {},
+    onRequestPlanSwitch: (Plan) -> Unit = {},
     onPlanBadgeLongPress: () -> Unit
 ) {
+    // 縦画面に固定
+    LockScreenOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT)
     var showLogoutDialog by remember { mutableStateOf(false) }
     var showCloudDialog by remember { mutableStateOf(false) }
     var hasAnnouncedInitialPlan by remember { mutableStateOf(false) }
@@ -154,7 +159,7 @@ fun ModernTopScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .pointerInput(Unit) {
-                        detectTapGestures(onLongPress = { onRequestPlanSwitch() })
+                        detectTapGestures(onPress = { onRequestPlanSwitch(Plan.PRACTICE) })
                     }
             ) {
                 Text(

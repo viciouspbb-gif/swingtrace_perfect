@@ -26,6 +26,8 @@ import com.golftrajectory.app.ai.AICoachConversationManager.ConversationOption
 import com.golftrajectory.app.ai.ChatMessage
 import com.golftrajectory.app.ai.GeminiAIManager
 import com.golftrajectory.app.ai.ModelOverloadedException
+import com.golftrajectory.app.utils.LockScreenOrientation
+import android.content.pm.ActivityInfo
 import com.swingtrace.aicoaching.analysis.ProSimilarityCalculator
 import com.swingtrace.aicoaching.domain.usecase.SwingData
 import com.swingtrace.aicoaching.voice.VoiceManager
@@ -151,6 +153,8 @@ fun AICoachingScreen(
     onCameraClick: () -> Unit = {},
     onVideoPickClick: () -> Unit = {}
 ) {
+    // 縦画面に固定
+    LockScreenOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT)
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()

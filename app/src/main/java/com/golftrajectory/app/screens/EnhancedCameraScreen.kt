@@ -26,6 +26,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
+import com.golftrajectory.app.utils.LockScreenOrientation
+import android.content.pm.ActivityInfo
 import com.swingtrace.aicoaching.repository.SwingAnalysisRepository
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -42,6 +44,8 @@ fun EnhancedCameraScreen(
     onVideoRecorded: (Uri) -> Unit,
     onBack: () -> Unit
 ) {
+    // 横画面に固定
+    LockScreenOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE)
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()

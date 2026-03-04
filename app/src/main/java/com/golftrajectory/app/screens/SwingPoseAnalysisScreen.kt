@@ -27,6 +27,8 @@ import com.golftrajectory.app.plan.UserPlanManager
 import com.golftrajectory.app.logic.BiomechanicsFrame
 import com.golftrajectory.app.ui.BiomechanicsHud
 import com.golftrajectory.app.ui.KinematicsGraph
+import com.golftrajectory.app.utils.LockScreenOrientation
+import android.content.pm.ActivityInfo
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -46,6 +48,8 @@ fun SwingPoseAnalysisScreen(
     onBack: () -> Unit,
     onAICoachClick: (com.golftrajectory.app.SwingAnalysisResult) -> Unit = {}
 ) {
+    // 横画面に固定
+    LockScreenOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE)
     var showDetailScreen by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val usageManager = remember { UsageManager(context) }
