@@ -38,10 +38,10 @@ import com.swingtrace.aicoaching.screens.SwingComparisonScreen
 import com.swingtrace.aicoaching.screens.ProComparisonScreen
 import com.golftrajectory.app.screens.SmartAIAnalysisScreen
 import com.swingtrace.aicoaching.ui.theme.SwingTraceWithAICoachingTheme
-import com.swingtrace.aicoaching.ai.CoachingStyle
 import com.swingtrace.aicoaching.RealTimeTrajectoryScreen
 import com.swingtrace.aicoaching.ads.AdManager
-import com.swingtrace.aicoaching.ai.GeminiAIManager
+import com.golftrajectory.app.ai.GeminiAIManager
+import com.golftrajectory.app.ai.CoachingStyle
 import com.golftrajectory.app.ClubHeadDetector
 import com.golftrajectory.app.ClubHeadTrackingScreen
 import com.golftrajectory.app.ClubHeadTrackingUseCase
@@ -552,18 +552,8 @@ class NewMainActivity : ComponentActivity() {
                             EnhancedCameraScreen(
                                 onVideoRecorded = { uri ->
                                     currentVideoUri = uri
-                                    isAnalyzing = true
-                                    
-                                    // 共通処理を使用
-                                    scope.launch {
-                                        val (result, coaching) = analyzeVideoInternal(uri)
-                                        analysisResult = result
-                                        aiCoaching = coaching
-                                        isAnalyzing = false
-                                        if (result != null) {
-                                            navController.navigate("result")
-                                        }
-                                    }
+                                    // 直接バイオメカニクス解析画面へ遷移（オンデバイス処理）
+                                    navController.navigate("poseAnalysis?videoUri=${uri}")
                                 },
                                 onBack = {
                                     navController.popBackStack()
@@ -603,6 +593,26 @@ class NewMainActivity : ComponentActivity() {
                                     videoUri = currentVideoUri!!,
                                     onBack = {
                                         navController.popBackStack("home", inclusive = false)
+                                    }
+                                )
+                            }
+                        }
+                        
+                        // バイオメカニクス解析画面（オンデバイス処理）
+                        composable("poseAnalysis?videoUri={videoUri}") { backStackEntry ->
+                            val videoUriString = backStackEntry.arguments?.getString("videoUri")
+                            if (videoUriString != null) {
+                                val videoUri = Uri.parse(videoUriString)
+                                SwingPoseAnalysisScreen(
+                                    videoUri = videoUri,
+                                    analysisMode = "rear",
+                                    planTier = planTier,
+                                    onBack = {
+                                        navController.popBackStack()
+                                    },
+                                    onAICoachClick = { result ->
+                                        // AIコーチ画面へ遷移（結果を渡す）
+                                        navController.navigate("aiCoach")
                                     }
                                 )
                             }

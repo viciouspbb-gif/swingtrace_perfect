@@ -21,10 +21,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.golftrajectory.app.plan.LitePlanAdBanner
 import com.golftrajectory.app.plan.UserPlanManager
-import com.swingtrace.aicoaching.ai.AICoachConversationManager
-import com.swingtrace.aicoaching.ai.ChatMessage
-import com.swingtrace.aicoaching.ai.GeminiAIManager
-import com.swingtrace.aicoaching.ai.ModelOverloadedException
+import com.golftrajectory.app.ai.AICoachConversationManager
+import com.golftrajectory.app.ai.ChatMessage
+import com.golftrajectory.app.ai.GeminiAIManager
+import com.golftrajectory.app.ai.ModelOverloadedException
 import com.swingtrace.aicoaching.analysis.ProSimilarityCalculator
 import com.swingtrace.aicoaching.domain.usecase.SwingData
 import com.swingtrace.aicoaching.voice.VoiceManager
