@@ -1,8 +1,8 @@
 package com.swingtrace.aicoaching.domain.usecase
 
 import android.net.Uri
-import com.swingtrace.aicoaching.ai.GeminiAIManager
-import com.swingtrace.aicoaching.ai.SwingAnalysisData
+import com.golftrajectory.app.ai.GeminiAIManager
+import com.golftrajectory.app.ai.SwingAnalysisData
 import com.swingtrace.aicoaching.analysis.ProSimilarityCalculator
 import com.swingtrace.aicoaching.database.AnalysisHistoryEntity
 import com.swingtrace.aicoaching.database.AppDatabase

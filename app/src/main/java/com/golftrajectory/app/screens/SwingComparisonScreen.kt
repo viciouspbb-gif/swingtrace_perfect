@@ -14,7 +14,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.swingtrace.aicoaching.database.AnalysisHistoryEntity
-import com.swingtrace.aicoaching.ai.GeminiAIManager
+import com.golftrajectory.app.ai.GeminiAIManager
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*

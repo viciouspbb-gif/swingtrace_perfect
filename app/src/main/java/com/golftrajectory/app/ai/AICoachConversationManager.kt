@@ -66,6 +66,14 @@ class AICoachConversationManager(
         val proName = proSimilarity?.pro?.name ?: "プロゴルファー"
         val similarity = proSimilarity?.similarity?.toInt() ?: 0
         
+        val styleInstruction = when (coachingStyle) {
+            CoachingStyle.FRIENDLY -> "親しみやすく、励ましながら"
+            CoachingStyle.PROFESSIONAL -> "プロフェッショナルで丁寧に"
+            CoachingStyle.TECHNICAL -> "技術的に、詳細に"
+            CoachingStyle.MOTIVATIONAL -> "モチベーションを高めるように"
+            else -> "標準的に"
+        }
+        
         val greeting = when (coachingStyle) {
             CoachingStyle.FRIENDLY -> {
                 buildString {

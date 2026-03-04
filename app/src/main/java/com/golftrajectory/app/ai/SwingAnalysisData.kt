@@ -13,5 +13,8 @@ data class SwingAnalysisData(
     val impactForce: Float,
     val followThrough: Float,
     val balance: Float,
+    val downswingSpeed: Float? = null,
+    val headStability: String? = null,
+    val swingPlane: String? = null,
     val timestamp: Long = System.currentTimeMillis()
 )
