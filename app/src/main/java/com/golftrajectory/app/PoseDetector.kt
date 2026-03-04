@@ -29,7 +29,8 @@ import android.os.SystemClock
 class PoseDetector(private val context: Context) {
     
     private val TAG = "SWING_TRACE"
-    private var poseLandmarker: PoseLandmarker? = null
+    private var liveLandmarker: PoseLandmarker? = null  // For LIVE_STREAM (real-time)
+    private var staticLandmarker: PoseLandmarker? = null // For IMAGE/VIDEO (synchronous)
     private var selectedModel: PoseModel? = null
     private var useGpuDelegate = true
     
@@ -53,7 +54,8 @@ class PoseDetector(private val context: Context) {
             val candidate = PoseModelSelector.selectOptimalModel(context, attemptedModels)
             if (candidate == null) {
                 Log.e(TAG, "Poseモデルファイルが見つからないため初期化を中止します")
-                poseLandmarker = null
+                liveLandmarker = null
+                staticLandmarker = null
                 return
             }
 
@@ -101,7 +103,8 @@ class PoseDetector(private val context: Context) {
                 .setDelegate(if (useGpu) Delegate.GPU else Delegate.CPU)
                 .build()
                 
-            val options = PoseLandmarkerOptions.builder()
+            // LIVE_STREAM 用の設定（リアルタイムカメラ用）
+            val liveOptions = PoseLandmarkerOptions.builder()
                 .setBaseOptions(baseOptions)
                 .setRunningMode(RunningMode.LIVE_STREAM)
                 .setNumPoses(1)
@@ -116,8 +119,23 @@ class PoseDetector(private val context: Context) {
                 }
                 .build()
                 
-            poseLandmarker?.close()
-            poseLandmarker = PoseLandmarker.createFromOptions(context, options)
+            // IMAGE 用の設定（静止画/動画解析用）
+            val staticOptions = PoseLandmarkerOptions.builder()
+                .setBaseOptions(baseOptions)
+                .setRunningMode(RunningMode.IMAGE)
+                .setNumPoses(1)
+                .setMinPoseDetectionConfidence(0.5f)
+                .setMinPosePresenceConfidence(0.5f)
+                .setMinTrackingConfidence(0.5f)
+                .build()
+                
+            // Close existing instances
+            liveLandmarker?.close()
+            staticLandmarker?.close()
+            
+            // Initialize new instances
+            liveLandmarker = PoseLandmarker.createFromOptions(context, liveOptions)
+            staticLandmarker = PoseLandmarker.createFromOptions(context, staticOptions)
             
             Log.i(TAG, "MediaPipe Pose Landmarker初期化成功: model=${model.modelName}, delegate=${if (useGpu) "GPU" else "CPU"}")
             Log.i(TAG, "★★★ ENGINE READY: Model=${model.modelName}, Delegate=${if (useGpu) "GPU" else "CPU"} ★★★")
@@ -163,12 +181,13 @@ class PoseDetector(private val context: Context) {
     }
     
     /**
-     * 画像から姿勢を検出
+     * 画像から姿勢を検出（同期処理用）
      */
     fun detectPose(bitmap: Bitmap): PoseLandmarkerResult? {
         return try {
             val mpImage = BitmapImageBuilder(bitmap).build()
-            poseLandmarker?.detect(mpImage)
+            // IMAGEモードのstaticLandmarkerを使用
+            staticLandmarker?.detect(mpImage)
         } catch (e: Exception) {
             Log.e(TAG, "姿勢検出失敗: ${e.message}", e)
             null
@@ -182,7 +201,8 @@ class PoseDetector(private val context: Context) {
         val startTime = SystemClock.elapsedRealtime()
         
         try {
-            poseLandmarker?.detectAsync(mpImage, timestamp)
+            // LIVE_STREAMモードのliveLandmarkerを使用
+            liveLandmarker?.detectAsync(mpImage, timestamp)
             
             // 推論時間を記録
             val inferenceTime = SystemClock.elapsedRealtime() - startTime
@@ -214,7 +234,9 @@ class PoseDetector(private val context: Context) {
      * リソースを解放
      */
     fun close() {
-        poseLandmarker?.close()
-        poseLandmarker = null
+        liveLandmarker?.close()
+        staticLandmarker?.close()
+        liveLandmarker = null
+        staticLandmarker = null
     }
 }
