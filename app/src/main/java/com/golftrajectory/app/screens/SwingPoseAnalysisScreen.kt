@@ -149,7 +149,7 @@ fun SwingPoseAnalysisScreen(
         
         kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
             try {
-                withContext(Dispatchers.IO) {
+                withContext(Dispatchers.Default) {
                     val retriever = MediaMetadataRetriever()
                     retriever.setDataSource(context, videoUri)
                     
