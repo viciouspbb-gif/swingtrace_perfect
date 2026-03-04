@@ -7,6 +7,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
+import com.golftrajectory.app.ai.AIServiceRepository
+import com.golftrajectory.app.usecase.ClassifySwingPhaseUseCase
+
 /**
  * クラブヘッド追跡ViewModel
  */
@@ -14,6 +17,7 @@ class ClubHeadTrackingViewModel(
     private val recorder: TrajectoryRecorder,
     private val phaseDetector: SwingPhaseDetector,
     private val repository: TrajectoryRepository,
+    private val aiServiceRepository: AIServiceRepository,
     private val geminiClassifier: GeminiPhaseClassifier? = null
 ) : ViewModel() {
     
@@ -90,12 +94,18 @@ class ClubHeadTrackingViewModel(
                 
                 // Gemini APIでフェーズ分類を補助
                 if (useGeminiClassification && geminiClassifier != null) {
-                    val classification = geminiClassifier.classifyPhases(trajectory.points)
-                    val updatedPoints = geminiClassifier.applyClassification(
-                        trajectory.points,
-                        classification
+                    val trajectoryString = trajectory.points.joinToString(",") { "${it.x},${it.y}" }
+                    val phasesResult = aiServiceRepository.classifyPhase(
+                        trajectoryString.split(",").map { it.trim() }
                     )
-                    trajectory = trajectory.copy(points = updatedPoints)
+
+                    val classifiedPhase = phasesResult.getOrNull()?.let { mapPhaseNameToSwingPhase(it) }
+                    if (classifiedPhase != null) {
+                        val classifiedTrajectory = trajectory.points.map { frame ->
+                            frame.copy(phase = classifiedPhase)
+                        }
+                        trajectory = trajectory.copy(points = classifiedTrajectory)
+                    }
                 }
                 
                 // 保存
@@ -147,5 +157,19 @@ class ClubHeadTrackingViewModel(
         phaseDetector.reset()
         _uiState.value = TrackingUiState.Idle
         _currentTrajectory.value = emptyList()
+    }
+}
+
+private fun mapPhaseNameToSwingPhase(name: String): SwingPhase {
+    return when (name.trim().uppercase()) {
+        "SETUP" -> SwingPhase.SETUP
+        "TAKEAWAY", "TAKEBACK" -> SwingPhase.TAKEAWAY
+        "BACKSWING" -> SwingPhase.BACKSWING
+        "TOP" -> SwingPhase.TOP
+        "DOWNSWING" -> SwingPhase.DOWNSWING
+        "IMPACT" -> SwingPhase.IMPACT
+        "FOLLOW", "FOLLOW_THROUGH" -> SwingPhase.FOLLOW_THROUGH
+        "FINISH" -> SwingPhase.FINISH
+        else -> SwingPhase.SETUP
     }
 }

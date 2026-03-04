@@ -3,6 +3,7 @@ package com.golftrajectory.app
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -31,7 +32,7 @@ fun AnimatedSwingPathCanvas(
     val context = LocalContext.current
     val planManager = remember { UserPlanManager.getInstance(context) }
     val currentPlan by planManager.planFlow.collectAsState(initial = Plan.PRACTICE)
-    val isPracticeMode = currentPlan.isPractice()
+    val isPracticeMode = currentPlan == Plan.PRACTICE
 
     val animatedProgress = remember { Animatable(0f) }
     
@@ -199,7 +200,7 @@ fun PlayableSwingPathCanvas(
     val context = LocalContext.current
     val planManager = remember { UserPlanManager.getInstance(context) }
     val currentPlan by planManager.planFlow.collectAsState(initial = Plan.PRACTICE)
-    val isPracticeMode = currentPlan.isPractice()
+    val isPracticeMode = currentPlan == Plan.PRACTICE
     
     LaunchedEffect(isPlaying) {
         if (isPlaying && pathPoints.isNotEmpty()) {
