@@ -6,6 +6,7 @@ import com.golftrajectory.app.ai.CoachingStyle
 import com.golftrajectory.app.ai.GeminiAIManager
 import com.swingtrace.aicoaching.analysis.ProSimilarityCalculator
 import com.swingtrace.aicoaching.domain.usecase.SwingData
+import com.golftrajectory.app.logic.BiomechanicsFrame
 
 /**
  * AIコーチ会話管理
@@ -14,6 +15,40 @@ class AICoachConversationManager(
     private val geminiAIManager: GeminiAIManager,
     private val userPlanManager: UserPlanManager
 ) {
+    
+    /**
+     * バイオメカニクスデータからサマリーを生成
+     */
+    private fun generateBiomechanicsSummary(biomechanicsHistory: List<BiomechanicsFrame>): String {
+        if (biomechanicsHistory.isEmpty()) return ""
+        
+        val xFactorValues = biomechanicsHistory.map { it.xFactorDegrees }
+        val spineAngles = biomechanicsHistory.map { it.spineAngleDegrees }
+        val stabilityValues = biomechanicsHistory.map { if (it.isStable) 1.0f else 0.0f }
+        
+        val maxXFactor = xFactorValues.maxOrNull() ?: 0f
+        val avgXFactor = xFactorValues.map { it.toDouble() }.average()
+        val avgSpineAngle = spineAngles.map { it.toDouble() }.average()
+        val spineAngleVariation = if (spineAngles.isNotEmpty()) {
+            (spineAngles.maxOrNull() ?: 0f) - (spineAngles.minOrNull() ?: 0f)
+        } else 0f
+        val stabilityScore = stabilityValues.map { it.toDouble() }.average()
+        
+        val stabilityText = when {
+            stabilityScore > 0.8 -> "非常に安定"
+            stabilityScore > 0.6 -> "安定"
+            stabilityScore > 0.4 -> "やや不安定"
+            else -> "不安定"
+        }
+        
+        return """
+            【スイングデータ（計測値）】
+            - 最大X-Factor: ${"%.1f".format(maxXFactor)}度 (理想: 45-60度)
+            - 平均前傾角: ${"%.1f".format(avgSpineAngle)}度 (変動幅: ±${"%.1f".format(spineAngleVariation)}度)
+            - 重心安定性: $stabilityText
+            上記データに基づき、プロの視点から30文字程度で改善点を一言で述べ、その後に詳細なレッスンを提供せよ。
+        """.trimIndent()
+    }
     
     /**
      * 会話の選択肢
@@ -41,9 +76,11 @@ class AICoachConversationManager(
         swingData: SwingData,
         proSimilarity: ProSimilarityCalculator.SimilarityResult?,
         previousScore: Int?,
+        biomechanicsHistory: List<BiomechanicsFrame> = emptyList(),
         coachingStyle: CoachingStyle = CoachingStyle.FRIENDLY
     ): CoachResponse {
-        val greeting = buildGreeting(swingData, proSimilarity, previousScore, coachingStyle)
+        val biomechanicsSummary = generateBiomechanicsSummary(biomechanicsHistory)
+        val greeting = buildGreeting(swingData, proSimilarity, previousScore, biomechanicsSummary, coachingStyle)
         val options = limitOptionsForMode(generateInitialOptions(swingData, proSimilarity))
         
         return CoachResponse(
@@ -60,6 +97,7 @@ class AICoachConversationManager(
         swingData: SwingData,
         proSimilarity: ProSimilarityCalculator.SimilarityResult?,
         previousScore: Int?,
+        biomechanicsSummary: String = "",
         coachingStyle: CoachingStyle
     ): String {
         val score = swingData.totalScore
@@ -91,6 +129,10 @@ class AICoachConversationManager(
                         }
                     }
                     
+                    if (biomechanicsSummary.isNotEmpty()) {
+                        append("\n$biomechanicsSummary")
+                    }
+                    
                     append("\nどんなアドバイスが欲しいですか？下の選択肢から選んでくださいね！💪")
                 }
             }
@@ -104,6 +146,10 @@ class AICoachConversationManager(
                         append("前回比：${if (diff > 0) "+" else ""}${diff}点\n")
                     }
                     
+                    if (biomechanicsSummary.isNotEmpty()) {
+                        append("\n$biomechanicsSummary")
+                    }
+                    
                     append("\n改善の余地がある項目について、具体的なアドバイスをご提供できます。")
                 }
             }
@@ -111,6 +157,10 @@ class AICoachConversationManager(
                 buildString {
                     append("スイングを確認しました。\n\n")
                     append("スコア：${score}点\n")
+                    
+                    if (biomechanicsSummary.isNotEmpty()) {
+                        append("\n$biomechanicsSummary")
+                    }
                     
                     if (score < 70) {
                         append("\nまだまだです。基本から見直す必要があります。\n")
@@ -135,6 +185,10 @@ class AICoachConversationManager(
                         } else {
                             append("今日は調子が出なかったかもしれませんが、次は必ずもっと良くなります！🌟\n")
                         }
+                    }
+                    
+                    if (biomechanicsSummary.isNotEmpty()) {
+                        append("\n$biomechanicsSummary")
                     }
                     
                     append("\nあなたには無限の可能性があります！\n")

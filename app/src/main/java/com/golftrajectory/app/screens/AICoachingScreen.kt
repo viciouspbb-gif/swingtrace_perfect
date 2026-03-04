@@ -31,6 +31,7 @@ import android.content.pm.ActivityInfo
 import com.swingtrace.aicoaching.analysis.ProSimilarityCalculator
 import com.swingtrace.aicoaching.domain.usecase.SwingData
 import com.swingtrace.aicoaching.voice.VoiceManager
+import com.golftrajectory.app.logic.BiomechanicsFrame
 import kotlinx.coroutines.launch
 
 /**
@@ -145,6 +146,7 @@ fun AICoachingScreen(
     swingData: SwingData? = null,
     proSimilarity: ProSimilarityCalculator.SimilarityResult? = null,
     previousScore: Int? = null,
+    biomechanicsHistory: List<BiomechanicsFrame> = emptyList(),
     planTier: Plan,
     isPremium: Boolean = false,
     userPlanManager: UserPlanManager,
@@ -214,9 +216,10 @@ fun AICoachingScreen(
             if (swingData != null) {
                 // スイングデータを基に会話開始
                 val response = conversationManager.startConversationWithSwingData(
-                    swingData = swingData,
+                    swingData = swingData!!,
                     proSimilarity = proSimilarity,
-                    previousScore = previousScore
+                    previousScore = previousScore,
+                    biomechanicsHistory = biomechanicsHistory
                 )
                 messages = listOf(ChatMessage(id = "model", text = response.message, isUser = false))
                 currentOptions = response.options
