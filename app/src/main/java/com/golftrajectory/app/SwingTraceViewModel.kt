@@ -5,6 +5,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.golftrajectory.app.usecase.*
+import com.golftrajectory.app.logic.BiomechanicsFrame
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -49,6 +50,37 @@ class SwingTraceViewModel(
     
     private val _showRewardedAd = MutableStateFlow(false)
     val showRewardedAd: StateFlow<Boolean> = _showRewardedAd.asStateFlow()
+    
+    // Biomechanics state
+    private val _biomechanicsState = MutableStateFlow<BiomechanicsFrame?>(null)
+    val biomechanicsState: StateFlow<BiomechanicsFrame?> = _biomechanicsState.asStateFlow()
+    
+    // Biomechanics history (ring buffer for last 100 frames)
+    private val _biomechanicsHistory = MutableStateFlow<List<BiomechanicsFrame>>(emptyList())
+    val biomechanicsHistory: StateFlow<List<BiomechanicsFrame>> = _biomechanicsHistory.asStateFlow()
+    
+    companion object {
+        private const val MAX_HISTORY_SIZE = 100
+    }
+    
+    /**
+     * Update biomechanics state and history
+     */
+    fun updateBiomechanics(frame: BiomechanicsFrame?) {
+        _biomechanicsState.value = frame
+        
+        frame?.let { newFrame ->
+            val currentHistory = _biomechanicsHistory.value.toMutableList()
+            currentHistory.add(newFrame)
+            
+            // Keep only the last MAX_HISTORY_SIZE frames
+            if (currentHistory.size > MAX_HISTORY_SIZE) {
+                currentHistory.removeAt(0)
+            }
+            
+            _biomechanicsHistory.value = currentHistory
+        }
+    }
     
     sealed class UiState {
         object Idle : UiState()

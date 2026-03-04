@@ -26,6 +26,9 @@ import com.golftrajectory.app.plan.LitePlanAdBanner
 import com.golftrajectory.app.plan.UserPlanManager
 import com.golftrajectory.app.logic.BiomechanicsFrame
 import com.golftrajectory.app.ui.BiomechanicsHud
+import com.golftrajectory.app.ui.KinematicsGraph
+import com.golftrajectory.app.SwingTraceViewModel
+import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -48,12 +51,14 @@ fun SwingPoseAnalysisScreen(
     var showDetailScreen by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val usageManager = remember { UsageManager(context) }
+    val viewModel: SwingTraceViewModel = viewModel()
     
     var showUsageLimitDialog by remember { mutableStateOf(false) }
     var remainingCount by remember { mutableStateOf(usageManager.getRemainingCount()) }
     
     // Biomechanics state for real-time display
     var biomechanicsData by remember { mutableStateOf<BiomechanicsFrame?>(null) }
+    val biomechanicsHistory by viewModel.biomechanicsHistory.collectAsState()
     
     // クラブ選択
     var selectedClub by remember { mutableStateOf(com.swingtrace.aicoaching.utils.DistanceEstimator.ClubType.DRIVER) }
@@ -109,6 +114,8 @@ fun SwingPoseAnalysisScreen(
         poseDetector.poseResultFlow.collect { resultPair ->
             val biomechanicsFrame = resultPair.second
             biomechanicsData = biomechanicsFrame
+            // Update ViewModel with new biomechanics data
+            viewModel.updateBiomechanics(biomechanicsFrame)
         }
     }
     
@@ -439,6 +446,12 @@ fun SwingPoseAnalysisScreen(
             BiomechanicsHud(
                 frame = biomechanicsData,
                 modifier = Modifier.align(Alignment.TopStart)
+            )
+            
+            // Kinematics Graph
+            KinematicsGraph(
+                history = biomechanicsHistory,
+                modifier = Modifier.align(Alignment.BottomStart)
             )
             
             // 分析結果表示（簡易版）
