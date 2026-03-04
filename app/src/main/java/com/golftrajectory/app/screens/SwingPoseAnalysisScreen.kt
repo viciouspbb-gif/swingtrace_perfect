@@ -24,6 +24,8 @@ import com.golftrajectory.app.UsageManager
 import com.golftrajectory.app.UsageLimitDialog
 import com.golftrajectory.app.plan.LitePlanAdBanner
 import com.golftrajectory.app.plan.UserPlanManager
+import com.golftrajectory.app.logic.BiomechanicsFrame
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -48,6 +50,9 @@ fun SwingPoseAnalysisScreen(
     
     var showUsageLimitDialog by remember { mutableStateOf(false) }
     var remainingCount by remember { mutableStateOf(usageManager.getRemainingCount()) }
+    
+    // Biomechanics state for real-time display
+    var biomechanicsData by remember { mutableStateOf<BiomechanicsFrame?>(null) }
     
     // クラブ選択
     var selectedClub by remember { mutableStateOf(com.swingtrace.aicoaching.utils.DistanceEstimator.ClubType.DRIVER) }
@@ -95,6 +100,14 @@ fun SwingPoseAnalysisScreen(
         onDispose {
             exoPlayer.release()
             poseDetector.close()
+        }
+    }
+    
+    // Collect biomechanics data
+    LaunchedEffect(poseDetector) {
+        poseDetector.poseResultFlow.collect { resultPair ->
+            val biomechanicsFrame = resultPair.second
+            biomechanicsData = biomechanicsFrame
         }
     }
     
