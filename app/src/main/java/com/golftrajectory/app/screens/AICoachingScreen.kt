@@ -25,6 +25,7 @@ import com.golftrajectory.app.ai.AICoachConversationManager
 import com.golftrajectory.app.ai.ChatMessage
 import com.golftrajectory.app.ai.GeminiAIManager
 import com.golftrajectory.app.ai.ModelOverloadedException
+import com.golftrajectory.app.ai.ConversationOption
 import com.swingtrace.aicoaching.analysis.ProSimilarityCalculator
 import com.swingtrace.aicoaching.domain.usecase.SwingData
 import com.swingtrace.aicoaching.voice.VoiceManager
@@ -277,7 +278,7 @@ fun AICoachingScreen(
                             options = currentOptions!!,
                             onOptionClick = { option ->
                                 currentOptions = null
-                                messages = messages + ChatMessage("user", option.text)
+                                messages = messages + ChatMessage(id = "user_${System.currentTimeMillis()}", text = option.text, isUser = true)
                                 isLoading = true
                                 
                                 scope.launch {
@@ -290,7 +291,7 @@ fun AICoachingScreen(
                                             proSimilarity = proSimilarity,
                                             isPremium = isPremium
                                         )
-                                        messages = messages + ChatMessage("model", response.message)
+                                        messages = messages + ChatMessage(id = "model_${System.currentTimeMillis()}", text = response.message, isUser = false)
                                         showUpgrade = response.showUpgrade
                                         upgradeMessage = response.upgradeMessage
                                         
@@ -299,8 +300,9 @@ fun AICoachingScreen(
                                         e.printStackTrace()
                                         android.util.Log.e("AICoachingScreen", "Error in conversation", e)
                                         messages = messages + ChatMessage(
-                                            "model",
-                                            "エラーが発生しました: ${e.message}\n\n${e.cause?.message ?: ""}"
+                                            id = "model_error_${System.currentTimeMillis()}",
+                                            text = "エラーが発生しました: ${e.message}\n\n${e.cause?.message ?: ""}",
+                                            isUser = false
                                         )
                                     } finally {
                                         isLoading = false

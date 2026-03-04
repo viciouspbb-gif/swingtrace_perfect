@@ -72,13 +72,17 @@ class AnalyzeSwingUseCase(
             val aiAdvice = if (isPremium) {
                 val swingAnalysisData = SwingAnalysisData(
                     totalScore = swingData.totalScore,
-                    backswingAngle = swingData.backswingAngle,
-                    downswingSpeed = swingData.downswingSpeed,
-                    hipRotation = swingData.hipRotation,
-                    shoulderRotation = swingData.shoulderRotation,
-                    headStability = swingData.headStability,
-                    weightShift = swingData.weightShift,
-                    swingPlane = swingData.swingPlane
+                    backswingAngle = swingData.backswingAngle.toFloat(),
+                    hipRotation = swingData.hipRotation.toFloat(),
+                    shoulderRotation = swingData.shoulderRotation.toFloat(),
+                    weightShift = swingData.weightShift.toFloat(),
+                    swingTempo = 0.0f,
+                    impactForce = 0.0f,
+                    followThrough = 0.0f,
+                    balance = 0.0f,
+                    downswingSpeed = swingData.downswingSpeed?.toFloat(),
+                    headStability = swingData.headStability?.toString(),
+                    swingPlane = swingData.swingPlane?.toString()
                 )
                 
                 aiManager.generateCoachingAdvice(

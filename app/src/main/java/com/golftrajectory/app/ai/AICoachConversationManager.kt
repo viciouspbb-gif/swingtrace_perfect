@@ -107,7 +107,7 @@ class AICoachConversationManager(
                     append("\n改善の余地がある項目について、具体的なアドバイスをご提供できます。")
                 }
             }
-            CoachingStyle.STRICT -> {
+            CoachingStyle.TECHNICAL -> {
                 buildString {
                     append("スイングを確認しました。\n\n")
                     append("スコア：${score}点\n")
