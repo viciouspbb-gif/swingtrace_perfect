@@ -2,7 +2,10 @@ package com.swingtrace.aicoaching.screens
 
 import android.net.Uri
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.*
@@ -11,6 +14,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -33,8 +39,14 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.delay
 import com.golftrajectory.app.plan.Plan
 import android.media.MediaMetadataRetriever
+import android.view.Surface
+import android.view.TextureView
+import android.graphics.Bitmap
+import android.graphics.SurfaceTexture
+import android.util.Log
 
 /**
  * スイング姿勢分析画面（MediaPipe使用）
@@ -85,6 +97,7 @@ fun SwingPoseAnalysisScreen(
     var videoHeight by remember { mutableStateOf(1080) }
     var frameDuration by remember { mutableStateOf(100L) } // ms
     var analysisResult by remember { mutableStateOf<com.golftrajectory.app.SwingAnalysisResult?>(null) }
+    var previewFrame by remember { mutableStateOf<Bitmap?>(null) }
     
     val swingAnalyzer = remember { com.golftrajectory.app.PoseSwingAnalyzer() }
     val isLitePlan = planTier == Plan.PRACTICE
@@ -143,15 +156,24 @@ fun SwingPoseAnalysisScreen(
         usageManager.incrementUsage()
         remainingCount = usageManager.getRemainingCount()
         
-        // 分析処理を開始
+        // 分析処理を開始（向きが確定してから遅延実行）
         isAnalyzing = true
         errorMessage = null
         
         kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
+            // 画面の向きがLandscapeに確定するのを待つ
+            delay(300)
+            
             try {
                 withContext(Dispatchers.Default) {
                     val retriever = MediaMetadataRetriever()
                     retriever.setDataSource(context, videoUri)
+                    
+                    // プレビュー用の最初のフレームを取得
+                    val firstFrame = retriever.frameAtTime
+                    withContext(Dispatchers.Main) {
+                        previewFrame = firstFrame
+                    }
                     
                     // 動画情報を取得
                     val duration = retriever.extractMetadata(
@@ -318,10 +340,45 @@ fun SwingPoseAnalysisScreen(
                     PlayerView(ctx).apply {
                         player = exoPlayer
                         useController = true
+                        Log.d("SwingPoseAnalysisScreen", "PlayerView created")
                     }
                 },
                 modifier = Modifier.fillMaxSize()
             )
+            
+            // プレビュー表示（解析前）
+            if (previewFrame != null && !isAnalyzing) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Image(
+                        bitmap = previewFrame!!.asImageBitmap(),
+                        contentDescription = "動画プレビュー",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Fit
+                    )
+                    
+                    // 準備中表示
+                    Column(
+                        modifier = Modifier
+                            .background(Color.Black.copy(alpha = 0.5f))
+                            .padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        CircularProgressIndicator(
+                            color = Color.White,
+                            modifier = Modifier.size(48.dp)
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "準備中...",
+                            color = Color.White,
+                            fontSize = 16.sp
+                        )
+                    }
+                }
+            }
             
             // 骨格表示（オーバーレイ）
             if (posePoints.isNotEmpty()) {
