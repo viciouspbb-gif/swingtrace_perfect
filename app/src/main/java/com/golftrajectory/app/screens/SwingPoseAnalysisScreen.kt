@@ -25,6 +25,7 @@ import com.golftrajectory.app.UsageLimitDialog
 import com.golftrajectory.app.plan.LitePlanAdBanner
 import com.golftrajectory.app.plan.UserPlanManager
 import com.golftrajectory.app.logic.BiomechanicsFrame
+import com.golftrajectory.app.ui.BiomechanicsHud
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -437,6 +438,12 @@ fun SwingPoseAnalysisScreen(
                     }
                 }
             }
+            
+            // Biomechanics HUD overlay
+            BiomechanicsHud(
+                frame = biomechanicsData,
+                modifier = Modifier.align(Alignment.TopStart)
+            )
             
             // 分析結果表示（簡易版）
             analysisResult?.let { result ->
