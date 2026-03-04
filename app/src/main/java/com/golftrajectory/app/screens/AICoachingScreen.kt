@@ -22,10 +22,10 @@ import androidx.compose.ui.unit.sp
 import com.golftrajectory.app.plan.LitePlanAdBanner
 import com.golftrajectory.app.plan.UserPlanManager
 import com.golftrajectory.app.ai.AICoachConversationManager
+import com.golftrajectory.app.ai.AICoachConversationManager.ConversationOption
 import com.golftrajectory.app.ai.ChatMessage
 import com.golftrajectory.app.ai.GeminiAIManager
 import com.golftrajectory.app.ai.ModelOverloadedException
-import com.golftrajectory.app.ai.ConversationOption
 import com.swingtrace.aicoaching.analysis.ProSimilarityCalculator
 import com.swingtrace.aicoaching.domain.usecase.SwingData
 import com.swingtrace.aicoaching.voice.VoiceManager
@@ -408,7 +408,7 @@ fun AICoachingScreen(
                                     voiceManager.startListening { recognizedText ->
                                         if (recognizedText.isNotBlank()) {
                                             val userMessage = recognizedText
-                                            messages = messages + ChatMessage("user", userMessage)
+                                            messages = messages + ChatMessage(id = "voice_${System.currentTimeMillis()}", text = userMessage, isUser = true)
                                             isLoading = true
                                             
                                             scope.launch {
@@ -421,7 +421,7 @@ fun AICoachingScreen(
                                                         message = userMessage,
                                                         conversationHistory = historyForAI
                                                     )
-                                                    messages = messages + ChatMessage("model", response)
+                                                    messages = messages + ChatMessage(id = "model_voice_${System.currentTimeMillis()}", text = response, isUser = false)
                                                     
                                                     // 音声で読み上げ（マークダウン記号を除去）
                                                     voiceManager.speak(response.removeMarkdown())
@@ -437,7 +437,7 @@ fun AICoachingScreen(
                                                         ).show()
                                                     } else {
                                                         val errorMsg = "申し訳ございません。エラーが発生しました: ${e.message}"
-                                                        messages = messages + ChatMessage("model", errorMsg)
+                                                        messages = messages + ChatMessage(id = "model_error_${System.currentTimeMillis()}", text = errorMsg, isUser = false)
                                                         voiceManager.speak("申し訳ございません。エラーが発生しました。")
                                                     }
                                                 } finally {
@@ -482,7 +482,7 @@ fun AICoachingScreen(
                             onClick = {
                                 if (inputText.isNotBlank() && !isLoading) {
                                     val userMessage = inputText
-                                    messages = messages + ChatMessage("user", userMessage)
+                                    messages = messages + ChatMessage(id = "text_${System.currentTimeMillis()}", text = userMessage, isUser = true)
                                     inputText = ""
                                     isLoading = true
                                     
@@ -496,7 +496,7 @@ fun AICoachingScreen(
                                                 message = userMessage,
                                                 conversationHistory = historyForAI
                                             )
-                                            messages = messages + ChatMessage("model", response)
+                                            messages = messages + ChatMessage(id = "model_text_${System.currentTimeMillis()}", text = response, isUser = false)
                                             listState.animateScrollToItem(messages.size)
                                         } catch (e: Exception) {
                                             android.util.Log.e("AICoachingScreen", "Text chat error", e)
@@ -508,8 +508,9 @@ fun AICoachingScreen(
                                                 ).show()
                                             } else {
                                                 messages = messages + ChatMessage(
-                                                    "model",
-                                                    "申し訳ございません。エラーが発生しました: ${e.message}\n\nもう一度お試しください。"
+                                                    id = "model_error_${System.currentTimeMillis()}",
+                                                    text = "申し訳ございません。エラーが発生しました: ${e.message}\n\nもう一度お試しください。",
+                                                    isUser = false
                                                 )
                                             }
                                         } finally {
@@ -538,7 +539,7 @@ fun AICoachingScreen(
 
 @Composable
 fun MessageBubble(message: ChatMessage) {
-    val isUser = message.role == "user"
+    val isUser = message.isUser
     
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -584,7 +585,7 @@ fun MessageBubble(message: ChatMessage) {
                 }
                 
                 Text(
-                    text = message.content.removeMarkdown(),
+                    text = message.text.removeMarkdown(),
                     color = if (isUser) Color.White else MaterialTheme.colorScheme.onSurface,
                     style = MaterialTheme.typography.bodyLarge
                 )
@@ -598,8 +599,8 @@ fun MessageBubble(message: ChatMessage) {
  */
 @Composable
 fun ConversationOptions(
-    options: List<ConversationOption>,
-    onOptionClick: (ConversationOption) -> Unit
+    options: List<AICoachConversationManager.ConversationOption>,
+    onOptionClick: (AICoachConversationManager.ConversationOption) -> Unit
 ) {
     Column(
         modifier = Modifier
