@@ -9,15 +9,15 @@ import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 /**
- * Gemini AI Manager（レガシー互換性のため残すが、内部はAIServiceRepositoryに委譲）
+ * Gemini AI Manager Legacy（レガシー互換性のため残すが、内部はAIServiceRepositoryに委譲）
  */
-class GeminiAIManager @Inject constructor(
+class GeminiAIManagerLegacy @Inject constructor(
     private val context: Context,
     private val aiServiceRepository: AIServiceRepository,
     private val userPlanManager: UserPlanManager
 ) {
     companion object {
-        private const val TAG = "GeminiAIManager"
+        private const val TAG = "GeminiAIManagerLegacy"
     }
     
     /**

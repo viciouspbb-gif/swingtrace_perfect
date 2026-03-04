@@ -71,7 +71,7 @@ class GeminiAIManager(private val context: Context) {
         val styleInstruction = when (coachingStyle) {
             CoachingStyle.FRIENDLY -> "親しみやすく、励ましながら"
             CoachingStyle.PROFESSIONAL -> "プロフェッショナルで丁寧に"
-            CoachingStyle.STRICT -> "厳しく、的確に"
+            CoachingStyle.TECHNICAL -> "技術的に、詳細に"
             CoachingStyle.MOTIVATIONAL -> "モチベーションを高めるように"
         }
 
@@ -105,36 +105,4 @@ class GeminiAIManager(private val context: Context) {
     }
 }
 
-/**
- * スイング分析データ
- */
-data class SwingAnalysisData(
-    val totalScore: Int,
-    val backswingAngle: Double,
-    val downswingSpeed: Double,
-    val hipRotation: Double,
-    val shoulderRotation: Double,
-    val headStability: Double,
-    val weightShift: Double,
-    val swingPlane: String
-)
-
-/**
- * チャットメッセージ
- */
-data class ChatMessage(
-    val role: String,
-    val content: String
-)
-
 class ModelOverloadedException : Exception("Gemini model overloaded")
-
-/**
- * コーチングスタイル
- */
-enum class CoachingStyle {
-    FRIENDLY,
-    PROFESSIONAL,
-    STRICT,
-    MOTIVATIONAL
-}
