@@ -2,6 +2,7 @@ package com.swingtrace.aicoaching.ai
 
 import android.content.Context
 import android.util.Log
+import com.swingtrace.aicoaching.BuildConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -12,7 +13,22 @@ import kotlinx.coroutines.withContext
 class GeminiAIManager(private val context: Context) {
 
     companion object {
-        private const val TAG = "GeminiAIManagerStub"
+        private const val TAG = "SWING_TRACE"
+    }
+
+    // APIキーが有効かどうかの判定フラグ
+    val isApiKeyConfigured: Boolean
+        get() = BuildConfig.GEMINI_API_KEY.isNotEmpty() && BuildConfig.GEMINI_API_KEY != "YOUR_API_KEY"
+
+    fun initialize() {
+        if (!isApiKeyConfigured) {
+            Log.e(TAG, "[GeminiAIManager] API Key is missing. AI features will be disabled. Set GEMINI_API_KEY in local.properties.")
+            // TODO: UI側に「APIキー未設定」のステータスを通知し、無限ループやクラッシュを防ぐ
+            return
+        }
+        
+        Log.i(TAG, "[GeminiAIManager] API Key loaded successfully. Initializing GenerativeModel...")
+        // 既存の GenerativeModel 初期化処理をここに続ける
     }
 
     /**
