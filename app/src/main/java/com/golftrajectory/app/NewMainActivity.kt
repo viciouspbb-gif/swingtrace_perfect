@@ -18,6 +18,7 @@ import androidx.navigation.compose.rememberNavController
 import com.golftrajectory.app.UserPreferences
 import com.golftrajectory.app.billing.BillingManager
 import com.golftrajectory.app.plan.UserPlanManager
+import com.golftrajectory.app.plan.Plan
 import com.swingtrace.aicoaching.api.*
 import com.swingtrace.aicoaching.repository.SwingAnalysisRepository
 import com.swingtrace.aicoaching.screens.AnalysisResultScreen
@@ -26,6 +27,7 @@ import com.swingtrace.aicoaching.screens.AutoTrajectoryScreen
 import com.swingtrace.aicoaching.screens.EnhancedCameraScreen
 import com.swingtrace.aicoaching.screens.HistoryScreen
 import com.golftrajectory.app.screens.ModernTopScreen
+import com.golftrajectory.app.screens.SettingsScreen
 import com.swingtrace.aicoaching.screens.SimpleMainScreen
 import com.swingtrace.aicoaching.screens.SimpleMainScreenWithLogout
 import com.swingtrace.aicoaching.screens.SwingPoseAnalysisScreen
@@ -34,7 +36,6 @@ import com.swingtrace.aicoaching.screens.PremiumScreen
 import com.swingtrace.aicoaching.screens.AICoachingScreen
 import com.swingtrace.aicoaching.screens.SwingComparisonScreen
 import com.swingtrace.aicoaching.screens.ProComparisonScreen
-import com.swingtrace.aicoaching.screens.SettingsScreen
 import com.golftrajectory.app.screens.SmartAIAnalysisScreen
 import com.swingtrace.aicoaching.ui.theme.SwingTraceWithAICoachingTheme
 import com.swingtrace.aicoaching.ai.CoachingStyle
@@ -153,9 +154,9 @@ class NewMainActivity : ComponentActivity() {
                 var previousScore by remember { mutableStateOf<Int?>(null) }
                 
                 val planManager = remember { userPlanManager }
-                val planTier by planManager.currentPlan.collectAsState()
-                val isPremium = planTier != UserPlanManager.PlanTier.TIER_LITE
-                val isProPlan = planTier == UserPlanManager.PlanTier.TIER_PRO || planTier == UserPlanManager.PlanTier.TIER_CLOUD
+                val planTier by planManager.planFlow.collectAsState(initial = com.golftrajectory.app.plan.Plan.PRACTICE)
+                val isPremium = planTier != com.golftrajectory.app.plan.Plan.PRACTICE
+                val isProPlan = planTier == com.golftrajectory.app.plan.Plan.PRO
                 
                 // コーチングスタイル
                 var coachingStyle by remember { 
@@ -202,9 +203,10 @@ class NewMainActivity : ComponentActivity() {
                         // ホーム画面（モダンデザイン）
                         composable("home") {
                             ModernTopScreen(
-                                userName = userPreferences.getUserName() ?: "ゲスト",
-                                latestScore = null, // TODO: ViewModelから取得
+                                userName = userPreferences.getUserName() ?: "Guest",
+                                latestScore = null,
                                 planTier = planTier,
+                                userPlanManager = userPlanManager,
                                 onCameraClick = {
                                     navController.navigate("camera")
                                 },
@@ -221,35 +223,30 @@ class NewMainActivity : ComponentActivity() {
                                 },
                                 onFrontSwingClick = {
                                     // 正面スイング分析
-                                    onVideoSelected = { uri ->
-                                        currentVideoUri = uri
-                                        navController.navigate("frontSwing")
+                                    if (isPremium) {
+                                        onVideoSelected = { uri ->
+                                            currentVideoUri = uri
+                                            navController.navigate("frontSwing")
+                                        }
+                                        videoPickerLauncher.launch("video/*")
+                                    } else {
+                                        navController.navigate("premium")
                                     }
-                                    videoPickerLauncher.launch("video/*")
                                 },
                                 onClubHeadTrackingClick = {
-                                    // クラブヘッド軌道追跡
-                                    navController.navigate("club_head_tracking")
+                                    navController.navigate("club_head")
                                 },
-                                onAICoachClick = {
-                                    navController.navigate("aiCoach")
-                                },
-                                onComparisonClick = {
-                                    if (isPremium || isProPlan) {
-                                        navController.navigate("comparison")
+                                onAICoachClick = { 
+                                    if (isPremium) {
+                                        navController.navigate("aiCoach")
                                     } else {
-                                        Toast.makeText(this@NewMainActivity, "有料プランが必要です", Toast.LENGTH_SHORT).show()
+                                        navController.navigate("premium")
                                     }
                                 },
-                                onHistoryClick = {
-                                    navController.navigate("history")
-                                },
-                                onPremiumClick = {
-                                    navController.navigate("premium")
-                                },
-                                onSettingsClick = {
-                                    navController.navigate("settings")
-                                },
+                                onComparisonClick = { navController.navigate("comparison") },
+                                onHistoryClick = { navController.navigate("history") },
+                                onPremiumClick = { navController.navigate("premium") },
+                                onSettingsClick = { navController.navigate("settings") },
                                 onLogout = {
                                     scope.launch {
                                         logoutUser()
@@ -260,24 +257,28 @@ class NewMainActivity : ComponentActivity() {
                                     }
                                 },
                                 onRequestPlanSwitch = {
-                                    val nextTier = when (planTier) {
-                                        UserPlanManager.PlanTier.TIER_LITE -> UserPlanManager.PlanTier.TIER_PRO
-                                        UserPlanManager.PlanTier.TIER_PRO -> UserPlanManager.PlanTier.TIER_CLOUD
-                                        UserPlanManager.PlanTier.TIER_CLOUD -> UserPlanManager.PlanTier.TIER_LITE
+                                    scope.launch {
+                                        val nextTier = when (planTier) {
+                                            com.golftrajectory.app.plan.Plan.PRACTICE -> com.golftrajectory.app.plan.Plan.ATHLETE
+                                            com.golftrajectory.app.plan.Plan.ATHLETE -> com.golftrajectory.app.plan.Plan.PRO
+                                            com.golftrajectory.app.plan.Plan.PRO -> com.golftrajectory.app.plan.Plan.PRACTICE
+                                        }
+                                        planManager.setPlan(nextTier)
                                     }
-                                    planManager.setPlan(nextTier)
                                 },
                                 onPlanBadgeLongPress = {
-                                    val nextTier = when (planTier) {
-                                        UserPlanManager.PlanTier.TIER_LITE -> UserPlanManager.PlanTier.TIER_PRO
-                                        else -> UserPlanManager.PlanTier.TIER_LITE
+                                    scope.launch {
+                                        val nextTier = when (planTier) {
+                                            com.golftrajectory.app.plan.Plan.PRACTICE -> com.golftrajectory.app.plan.Plan.ATHLETE
+                                            else -> com.golftrajectory.app.plan.Plan.PRACTICE
+                                        }
+                                        planManager.setPlan(nextTier)
+                                        Toast.makeText(
+                                            this@NewMainActivity,
+                                            "Debug: Plan switched to ${nextTier.name}",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
                                     }
-                                    planManager.setPlan(nextTier)
-                                    Toast.makeText(
-                                        this@NewMainActivity,
-                                        "Debug: Plan switched to ${nextTier.displayName}",
-                                        Toast.LENGTH_SHORT
-                                    ).show()
                                 },
                             )
                         }
@@ -433,20 +434,11 @@ class NewMainActivity : ComponentActivity() {
                                 previousScore = previousScore,
                                 planTier = planTier,
                                 isPremium = isPremium,
+                                userPlanManager = userPlanManager,
                                 onBack = { navController.popBackStack() },
-                                onUpgradeClick = {
-                                    navController.navigate("premium")
-                                },
-                                onCameraClick = {
-                                    navController.navigate("camera")
-                                },
-                                onVideoPickClick = {
-                                    onVideoSelected = { uri ->
-                                        currentVideoUri = uri
-                                        navController.navigate("rearSwing")
-                                    }
-                                    videoPickerLauncher.launch("video/*")
-                                }
+                                onUpgradeClick = { navController.navigate("premium") },
+                                onCameraClick = { navController.navigate("camera") },
+                                onVideoPickClick = { /* TODO: Video picker */ }
                             )
                         }
                         
@@ -513,16 +505,6 @@ class NewMainActivity : ComponentActivity() {
                         // 設定画面
                         composable("settings") {
                             SettingsScreen(
-                                currentCoachingStyle = coachingStyle,
-                                onCoachingStyleChange = { newStyle ->
-                                    coachingStyle = newStyle
-                                    userPreferences.saveCoachingStyle(newStyle.name)
-                                    Toast.makeText(
-                                        this@NewMainActivity,
-                                        "コーチングスタイルを変更しました",
-                                        Toast.LENGTH_SHORT
-                                    ).show()
-                                },
                                 onBack = { navController.popBackStack() }
                             )
                         }

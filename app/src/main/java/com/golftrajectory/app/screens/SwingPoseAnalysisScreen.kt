@@ -27,6 +27,7 @@ import com.golftrajectory.app.plan.UserPlanManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.golftrajectory.app.plan.Plan
 import android.media.MediaMetadataRetriever
 
 /**
@@ -37,7 +38,7 @@ import android.media.MediaMetadataRetriever
 fun SwingPoseAnalysisScreen(
     videoUri: Uri,
     analysisMode: String = "rear", // "rear" or "front"
-    planTier: UserPlanManager.PlanTier,
+    planTier: Plan,
     onBack: () -> Unit,
     onAICoachClick: (com.golftrajectory.app.SwingAnalysisResult) -> Unit = {}
 ) {
@@ -74,7 +75,7 @@ fun SwingPoseAnalysisScreen(
     var analysisResult by remember { mutableStateOf<com.golftrajectory.app.SwingAnalysisResult?>(null) }
     
     val swingAnalyzer = remember { com.golftrajectory.app.PoseSwingAnalyzer() }
-    val isLitePlan = planTier == UserPlanManager.PlanTier.TIER_LITE
+    val isLitePlan = planTier == Plan.PRACTICE
     
     // 動画の再生位置を監視
     LaunchedEffect(allPoses) {

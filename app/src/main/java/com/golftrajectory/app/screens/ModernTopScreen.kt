@@ -57,6 +57,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.googlefonts.Font
 import androidx.compose.ui.text.googlefonts.GoogleFont
+import com.golftrajectory.app.plan.Plan
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
@@ -72,7 +73,8 @@ import com.golftrajectory.app.plan.UserPlanManager
 fun ModernTopScreen(
     userName: String,
     latestScore: Int? = null,
-    planTier: UserPlanManager.PlanTier,
+    planTier: Plan,
+    userPlanManager: UserPlanManager,
     onCameraClick: () -> Unit,
     onSmartAIAnalysisClick: () -> Unit,
     onRearSwingClick: () -> Unit,
@@ -122,13 +124,14 @@ fun ModernTopScreen(
             WindowCompat.getInsetsController(it, it.decorView).isAppearanceLightStatusBars = false
         }
     }
-    val isLite = planTier == UserPlanManager.PlanTier.TIER_LITE
-    val isCloud = planTier == UserPlanManager.PlanTier.TIER_CLOUD
+    val isLite = planTier == Plan.PRACTICE
+    val isPro = planTier == Plan.PRO
+    val isCloud = planTier == Plan.PRO
     LaunchedEffect(planTier) {
         if (hasAnnouncedInitialPlan) {
             Toast.makeText(
                 context,
-                "プランを ${planTier.displayName} に切り替えました",
+                "プランを ${planTier.name} に切り替えました",
                 Toast.LENGTH_SHORT
             ).show()
         } else {
@@ -399,25 +402,25 @@ fun FeatureCard(
 
 @Composable
 fun PlanBadge(
-    planTier: UserPlanManager.PlanTier,
+    planTier: Plan,
     onSettingsClick: () -> Unit,
     onLogoutClick: () -> Unit,
     onLongPress: () -> Unit = {}
 ) {
     val (label, caption, colors) = when (planTier) {
-        UserPlanManager.PlanTier.TIER_LITE -> Triple(
-            "Lite",
-            "広告あり・AI簡易モード",
+        Plan.PRACTICE -> Triple(
+            "PRACTICE",
+            "無料版・基本機能",
             listOf(Color(0xFF5C6BC0), Color(0xFF303F9F))
         )
-        UserPlanManager.PlanTier.TIER_PRO -> Triple(
-            "PRO",
-            "広告なし・AIフル機能",
+        Plan.ATHLETE -> Triple(
+            "ATHLETE",
+            "選手版・AI分析",
             listOf(Color(0xFF64B5F6), Color(0xFF1976D2))
         )
-        UserPlanManager.PlanTier.TIER_CLOUD -> Triple(
-            "PRO Cloud",
-            "クラウド解析 + AIキャディー",
+        Plan.PRO -> Triple(
+            "PRO",
+            "プロ版・全機能",
             listOf(Color(0xFFB388FF), Color(0xFF7C4DFF))
         )
     }

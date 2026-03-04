@@ -1,8 +1,10 @@
 package com.golftrajectory.app
 
-import com.golftrajectory.app.plan.Plan
-import com.golftrajectory.app.plan.UserPlanManager
-import com.golftrajectory.app.pose.PoseLandmarkerHelper
+import com.golftrajectory.app.ai.Plan
+import com.golftrajectory.app.ai.UserPlanManager
+import com.golftrajectory.app.analysis.AnalysisEngineAuditor
+import com.golftrajectory.app.detection.ZeroCopyBallDetector
+import com.golftrajectory.app.performance.PerformanceLogger
 import android.content.ContentValues
 import android.content.Context
 import android.content.res.Configuration
@@ -13,6 +15,9 @@ import android.widget.Toast
 import androidx.camera.core.*
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
+import androidx.camera.video.Recorder
+import androidx.camera.video.VideoCapture
+import androidx.camera.video.MediaStoreOutputOptions
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.video.*
 import androidx.camera.view.PreviewView
@@ -52,9 +57,19 @@ import androidx.compose.runtime.rememberCoroutineScope
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.rememberMultiplePermissionsState
 import java.io.File
+import java.util.concurrent.Executors
 import java.text.SimpleDateFormat
 import java.util.*
 import kotlin.math.min
+import kotlinx.coroutines.runBlocking
+
+// 専用解析スレッド（グローバルで1つだけ）
+private val analysisExecutor = Executors.newSingleThreadExecutor()
+
+// 30fpsリミッター用
+private var lastProcessTime = 0L
+private const val TARGET_FPS = 30
+private const val FRAME_INTERVAL_MS = 1000 / TARGET_FPS // 33.3ms
 
 @OptIn(ExperimentalPermissionsApi::class)
 @Composable
@@ -332,11 +347,15 @@ fun CameraContent(
     var recorderLimitJob by remember { mutableStateOf<Job?>(null) }
     val scope = rememberCoroutineScope()
     
+    // プランマネージャー
+    val planManager = UserPlanManager.getInstance(context)
+    val currentPlan by planManager.currentPlan.collectAsState(initial = Plan.PRACTICE)
+    
     // 自動検出された弾道ポイント（サーバーAI診断用の重要データ）
     val detectedPoints = remember { mutableStateListOf<Offset>() }
     
     // ML Kit検出器
-    val ballDetector = remember { MLKitBallDetector() }
+    val ballDetector = remember { ZeroCopyBallDetector() }
     
     // 追跡開始時の初期化
     LaunchedEffect(ballLocked, ballPosition) {
@@ -350,7 +369,7 @@ fun CameraContent(
     // クリーンアップ
     DisposableEffect(Unit) {
         onDispose {
-            ballDetector.close()
+            // ballDetectorはcloseメソッドなし
         }
     }
     
@@ -389,61 +408,84 @@ fun CameraContent(
                     
                     // ImageAnalysisの設定（バックグラウンドスレッドで実行）
                     val imageAnalyzer = ImageAnalysis.Builder()
+                        .setTargetResolution(android.util.Size(1280, 720)) // 720p固定
                         .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                         .build()
                         .also { analysis ->
-                            analysis.setAnalyzer(ContextCompat.getMainExecutor(ctx)) { imageProxy ->
-                                // 録画中かつボールがロックオンされている場合のみ解析
-                                if (isRecording && ballLocked && ballPosition != null) {
-                                    try {
-                                        // ImageProxyをBitmapに変換
-                                        val bitmap = imageProxy.toBitmap()
-                                        val timestamp = System.currentTimeMillis()
+                            analysis.setAnalyzer(analysisExecutor) { imageProxy ->
+                            // フレーム記録（入力FPS計測）
+                            AnalysisEngineAuditor.recordFrame(imageProxy.width, imageProxy.height, imageProxy.imageInfo.timestamp)
+                            
+                            // 30fpsリミッター（間引き制御）
+                            val currentTime = System.currentTimeMillis()
+                            if (currentTime - lastProcessTime < FRAME_INTERVAL_MS) {
+                                // 間引き：このフレームをスキップしてリソースを温存
+                                imageProxy.close()
+                                return@setAnalyzer
+                            }
+                            lastProcessTime = currentTime
+                            
+                            // 録画中かつボールがロックオンされている場合のみ解析
+                            if (isRecording && ballLocked && ballPosition != null) {
+                                // 処理フレーム記録
+                                AnalysisEngineAuditor.recordProcessedFrame()
+                                PerformanceLogger.recordFrame()
+                                
+                                try {
+                                    // ゼロコピー：ImageProxyから直接処理
+                                    val timestamp = System.currentTimeMillis()
+                                    
+                                    // ボール検出（ImageProxy直接処理）
+                                    val result = runBlocking {
+                                        ballDetector.detectWhiteBallFromProxy(imageProxy, timestamp)
+                                    }
                                         
-                                        // ボール検出（色ベース検出を使用）
-                                        val result = ballDetector.detectWhiteBall(bitmap, timestamp)
+                                    result?.let { detection ->
+                                        // 検出された正確な座標を取得
+                                        // 左打ちの場合はX座標を反転
+                                        val rawX = detection.position.left
+                                        val adjustedX = if (isRightHanded) rawX else (imageProxy.width - rawX)
                                         
-                                        result?.let { detection ->
-                                            // 検出された正確な座標を取得
-                                            // 左打ちの場合はX座標を反転
-                                            val rawX = detection.position.x
-                                            val adjustedX = if (isRightHanded) rawX else (bitmap.width - rawX)
-                                            
-                                            val newPosition = Offset(
-                                                x = adjustedX,
-                                                y = detection.position.y
-                                            )
+                                        val newPosition = Offset(
+                                            x = adjustedX,
+                                            y = detection.position.top
+                                        )
                                             
                                             // ノイズ除去：前回の位置から妥当な範囲内の場合のみ追加
-                                            val lastPoint = detectedPoints.lastOrNull()
-                                            val isValidPosition = if (lastPoint != null) {
-                                                val distance = kotlin.math.sqrt(
-                                                    (newPosition.x - lastPoint.x) * (newPosition.x - lastPoint.x) +
-                                                    (newPosition.y - lastPoint.y) * (newPosition.y - lastPoint.y)
-                                                )
-                                                // 300px以内の移動のみ有効とする
-                                                distance < 300f
-                                            } else {
-                                                true
-                                            }
-                                            
-                                            if (isValidPosition) {
-                                                // サーバーAI診断用の重要データとして追加
-                                                detectedPoints.add(newPosition)
-                                                // 現在の追跡位置を更新
-                                                ballPosition = newPosition
-                                            }
+                                        val lastPoint = detectedPoints.lastOrNull()
+                                        val isValidPosition = if (lastPoint != null) {
+                                            val distance = kotlin.math.sqrt(
+                                                (newPosition.x - lastPoint.x) * (newPosition.x - lastPoint.x) +
+                                                (newPosition.y - lastPoint.y) * (newPosition.y - lastPoint.y)
+                                            )
+                                            // 300px以内の移動のみ有効とする
+                                            distance < 300f
+                                        } else {
+                                            true
                                         }
-                                    } catch (e: Exception) {
-                                        e.printStackTrace()
+                                        
+                                        if (isValidPosition) {
+                                            // サーバーAI診断用の重要データとして追加
+                                            detectedPoints.add(newPosition)
+                                            // 現在の追跡位置を更新
+                                            ballPosition = newPosition
+                                        }
                                     }
+                                } catch (e: Exception) {
+                                    e.printStackTrace()
+                                } finally {
+                                    imageProxy.close()
                                 }
-                                
+                            } else {
                                 imageProxy.close()
                             }
                         }
+                    }
                     
                     imageAnalysis = imageAnalyzer
+                    
+                    // 監査ログ出力
+                    AnalysisEngineAuditor.logCameraXConfig()
                     
                     val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
                     
@@ -786,6 +828,9 @@ fun CameraContent(
                         ballLocked = false
                         ballPosition = null
                         detectedPoints.clear()
+                        
+                        // 解析監査停止
+                        AnalysisEngineAuditor.stopAudit()
                     } else {
                         // 録画開始
                         val name = "SwingTrace_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())}"
@@ -835,7 +880,11 @@ fun CameraContent(
                             }
                         isRecording = true
                         val planManager = UserPlanManager.getInstance(context)
-                        if (planManager.getCurrentPlan().isPractice()) {
+                        
+                        // 10秒間実測ログ開始
+                        PerformanceLogger.startMeasurement()
+                        
+                        if (currentPlan == Plan.PRACTICE) {
                             recorderLimitJob?.cancel()
                             recorderLimitJob = scope.launch {
                                 delay(15_000)

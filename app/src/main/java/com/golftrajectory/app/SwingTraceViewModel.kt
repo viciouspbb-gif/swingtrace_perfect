@@ -172,9 +172,11 @@ class SwingTraceViewModel(
                 }
                 
                 // フェーズ分類
-                val phases = if (useGemini) {
+                val phases: List<ClassifySwingPhaseUseCase.SwingPhase> = if (useGemini) {
                     // Gemini APIで分類
-                    classifySwingPhaseUseCase.classifyWithGemini(trajectoryData)
+                    val trajectoryString = trajectoryData.joinToString(",") { "${it.x},${it.y}" }
+                    classifySwingPhaseUseCase.classify(trajectoryString)
+                        .map { phase -> List(trajectoryData.size) { phase } }
                         .getOrElse {
                             // 失敗時はローカル判定
                             classifySwingPhaseUseCase.classifyLocally(trajectoryData)

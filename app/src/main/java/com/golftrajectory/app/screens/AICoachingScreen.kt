@@ -16,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import com.golftrajectory.app.plan.Plan
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.golftrajectory.app.plan.LitePlanAdBanner
@@ -141,8 +142,9 @@ fun AICoachingScreen(
     swingData: SwingData? = null,
     proSimilarity: ProSimilarityCalculator.SimilarityResult? = null,
     previousScore: Int? = null,
-    planTier: UserPlanManager.PlanTier,
+    planTier: Plan,
     isPremium: Boolean = false,
+    userPlanManager: UserPlanManager,
     onBack: () -> Unit,
     onUpgradeClick: () -> Unit = {},
     onCameraClick: () -> Unit = {},
@@ -153,7 +155,7 @@ fun AICoachingScreen(
     val listState = rememberLazyListState()
     
     val voiceManager = remember { VoiceManager(context) }
-    val conversationManager = remember { AICoachConversationManager(aiManager) }
+    val conversationManager = remember { AICoachConversationManager(aiManager, userPlanManager) }
     
     val isListening by voiceManager.isListening.collectAsState()
     val isSpeaking by voiceManager.isSpeaking.collectAsState()
@@ -165,7 +167,7 @@ fun AICoachingScreen(
     var currentOptions by remember { mutableStateOf<List<AICoachConversationManager.ConversationOption>?>(null) }
     var showUpgrade by remember { mutableStateOf(false) }
     var upgradeMessage by remember { mutableStateOf<String?>(null) }
-    val isLitePlan = planTier == UserPlanManager.PlanTier.TIER_LITE
+    val isLitePlan = planTier == Plan.PRACTICE
     val liteSummary = remember(swingData, proSimilarity, previousScore) {
         buildString {
             append("最新のスイング診断まとめ\n\n")
