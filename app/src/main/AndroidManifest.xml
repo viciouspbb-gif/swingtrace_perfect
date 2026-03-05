@@ -36,7 +36,6 @@
         <activity
             android:name=".NewMainActivity"
             android:exported="true"
-            android:screenOrientation="sensorLandscape"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|density|keyboardHidden"
             android:theme="@style/Theme.GolfTrajectoryApp">
             <intent-filter>

@@ -64,20 +64,15 @@ fun SwingPoseAnalysisScreen(
     val context = LocalContext.current
     val activity = (context as? ComponentActivity)
 
-    // 物理的な横固定（UI描画前に強制執行）
-    LaunchedEffect(Unit) {
-        activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-        delay(100)
-    }
-
     val usageManager = remember { UsageManager(context) }
-    LockScreenOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE)
 
     val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner) {
-        val originalOrientation = activity?.requestedOrientation
+    DisposableEffect(Unit) {
+        val originalOrientation = activity?.requestedOrientation ?: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-        onDispose { originalOrientation?.let { activity?.requestedOrientation = it } }
+        onDispose {
+            activity?.requestedOrientation = originalOrientation
+        }
     }
 
     // States
@@ -381,16 +376,36 @@ fun SwingPoseAnalysisScreen(
             }
         }
 
-        // 3. 骨格描画（正確な座標変換付き）
+        // 3. 骨格描画（完璧な数学的座標マッピング）
         if (posePoints.isNotEmpty()) {
             Canvas(modifier = Modifier.fillMaxSize()) {
-                // 動画の実際の描画エリアを計算
-                val videoRect = calculateVideoRect(size.width, size.height)
-                
-                // MediaPipe座標をCanvas座標に変換
-                val canvasPoints = transformMediaPipeToCanvas(posePoints, videoRect)
+                // 1. 動画の回転状態を考慮した「実際の映像サイズ」
+                val isRotated = videoRotation == 90 || videoRotation == 270
+                val actualVideoWidth = if (isRotated) videoHeight.toFloat() else videoWidth.toFloat()
+                val actualVideoHeight = if (isRotated) videoWidth.toFloat() else videoHeight.toFloat()
 
-                drawMediaPipeSkeleton(canvasPoints, analysisResult)
+                // 2. Canvasサイズと映像サイズの比率（Fitスケール）
+                val canvasWidth = size.width
+                val canvasHeight = size.height
+                val scale = minOf(canvasWidth / actualVideoWidth, canvasHeight / actualVideoHeight)
+
+                // 3. 映像が実際に描画されるサイズ
+                val drawWidth = actualVideoWidth * scale
+                val drawHeight = actualVideoHeight * scale
+
+                // 4. 余白（黒帯）のオフセット量（中央寄せ）
+                val offsetX = (canvasWidth - drawWidth) / 2f
+                val offsetY = (canvasHeight - drawHeight) / 2f
+
+                // 5. MediaPipe座標（0.0~1.0）の変換
+                val scaledPoints = posePoints.map { point ->
+                    Offset(
+                        x = offsetX + (point.x * drawWidth),
+                        y = offsetY + (point.y * drawHeight)
+                    )
+                }
+
+                drawMediaPipeSkeleton(scaledPoints, analysisResult)
             }
         }
 

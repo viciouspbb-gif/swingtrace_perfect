@@ -10,6 +10,7 @@ import androidx.camera.video.*
 import androidx.camera.view.PreviewView
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
+import androidx.activity.ComponentActivity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -33,7 +34,6 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.video.VideoCapture
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
-import com.golftrajectory.app.utils.LockScreenOrientation
 import com.swingtrace.aicoaching.repository.SwingAnalysisRepository
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -51,11 +51,19 @@ fun EnhancedCameraScreen(
     onAutoAnalysisStart: (Uri) -> Unit = {},
     onBack: () -> Unit
 ) {
-    // 横画面に固定
-    LockScreenOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE)
     val context = LocalContext.current
+    val activity = (context as? ComponentActivity)
     val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
+    
+    // 動的オリエンテーション・ロック（開いた時だけ横画面、閉じたら元に戻す）
+    DisposableEffect(Unit) {
+        val originalOrientation = activity?.requestedOrientation ?: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+        onDispose {
+            activity?.requestedOrientation = originalOrientation
+        }
+    }
     
     // 現在の向きを検出
     val configuration = LocalConfiguration.current
