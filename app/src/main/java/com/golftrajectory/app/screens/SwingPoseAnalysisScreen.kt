@@ -5,7 +5,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.background
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Info
@@ -25,757 +25,493 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleOwner
 import androidx.media3.common.MediaItem
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
+import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.LocalActivityResultRegistryOwner
-import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
 import com.golftrajectory.app.PoseDetector
 import com.golftrajectory.app.UsageManager
 import com.golftrajectory.app.plan.UserPlanManager
 import com.golftrajectory.app.logic.BiomechanicsFrame
 import com.golftrajectory.app.ui.BiomechanicsHud
-import com.golftrajectory.app.ui.KinematicsGraph
 import com.golftrajectory.app.utils.LockScreenOrientation
 import android.content.pm.ActivityInfo
-import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
 import com.golftrajectory.app.plan.Plan
 import android.media.MediaMetadataRetriever
-import android.view.Surface
-import android.view.TextureView
 import android.graphics.Bitmap
-import android.graphics.SurfaceTexture
+import android.graphics.Matrix
 import android.util.Log
 import android.widget.Toast
 
 /**
- * スイング姿勢分析画面（MediaPipe使用）
+ * スイング姿勢分析画面（MediaPipe使用）- プロ仕様フルスクリーン版
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SwingPoseAnalysisScreen(
     videoUri: Uri,
-    analysisMode: String = "rear", // "rear" or "front"
+    analysisMode: String = "rear",
     planTier: Plan,
-    autoStart: Boolean = false, // 自動開始フラグ
+    autoStart: Boolean = false,
     onBack: () -> Unit,
     onAICoachClick: (com.golftrajectory.app.SwingAnalysisResult) -> Unit = {}
 ) {
-    // 物理的な横固定（UI描画前に強制執行）
     val context = LocalContext.current
     val activity = (context as? ComponentActivity)
-    
-    // 1ピクセルでも描画される前に物理的に横固定
+
+    // 物理的な横固定（UI描画前に強制執行）
     LaunchedEffect(Unit) {
         activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-        delay(100) // 向き変更の確定を待機
+        delay(100)
     }
-    
-    var showDetailScreen by remember { mutableStateOf(false) }
+
     val usageManager = remember { UsageManager(context) }
-    
-    // 横画面に固定（一度だけ実行）
     LockScreenOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE)
-    
-    // 物理的な向きロック（Lifecycle 連動）
+
     val lifecycleOwner = LocalLifecycleOwner.current
-    
     DisposableEffect(lifecycleOwner) {
         val originalOrientation = activity?.requestedOrientation
-        
-        // Activity が AttachedToWindow された瞬間に物理的にロック
         activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-        
-        onDispose {
-            // 元の向きに戻す
-            originalOrientation?.let { activity?.requestedOrientation = it }
-        }
+        onDispose { originalOrientation?.let { activity?.requestedOrientation = it } }
     }
-    
-    // Ready-to-Analyze gatekeeping states
+
+    // States
     var isOrientationLocked by remember { mutableStateOf(false) }
     var isVideoLoaded by remember { mutableStateOf(false) }
     var isSurfaceReady by remember { mutableStateOf(false) }
     var videoRotation by remember { mutableStateOf(0) }
     var previewFrame by remember { mutableStateOf<Bitmap?>(null) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
-    var letterboxRatio by remember { mutableStateOf(1.0f) } // レターボックス比率
-    
-    // 向きロック完了を待機
+    var letterboxRatio by remember { mutableStateOf(1.0f) }
+
     LaunchedEffect(Unit) {
-        delay(100) // 向き変更を待機
+        delay(100)
         isOrientationLocked = true
     }
-    
-    // 動画読み込みと向き確認
+
+    // 動画読み込みとバリデーション
     LaunchedEffect(videoUri) {
         try {
             val retriever = MediaMetadataRetriever()
             retriever.setDataSource(context, videoUri)
-            
-            // 動画の回転角を取得
             val rotation = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
             videoRotation = rotation
-            
-            // 動画のサイズを取得
+
             val width = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: 1920
             val height = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull() ?: 1080
-            
-            // 厳格な横向き動画バリデーション
+
             if (height > width) {
-                // 縦動画は即座に拒否
                 errorMessage = "スイング分析は横向きで撮影された動画のみ対応しています。スマホを横にして撮り直してください。"
                 retriever.release()
                 return@LaunchedEffect
             }
-            
-            // 縦動画の判定とレターボックス比率計算
+
             val isPortrait = rotation == 90 || rotation == 270
             if (isPortrait) {
-                // 縦動画の場合、横画面での表示比率を計算
-                val videoAspectRatio = height.toFloat() / width.toFloat() // 実際の動画比率（縦長）
-                val screenAspectRatio = 16f / 9f // 画面比率（横長）
-                letterboxRatio = screenAspectRatio / videoAspectRatio // レターボックス比率
-                Log.d("SwingPoseAnalysisScreen", "Portrait video detected: ${width}x${height}, letterbox ratio: $letterboxRatio")
+                val videoAspectRatio = height.toFloat() / width.toFloat()
+                val screenAspectRatio = 16f / 9f
+                letterboxRatio = screenAspectRatio / videoAspectRatio
             } else {
                 letterboxRatio = 1.0f
             }
-            
-            // プレビュー用の最初のフレームを取得
-            val firstFrame = retriever.frameAtTime
-            previewFrame = firstFrame
-            
+
+            previewFrame = retriever.frameAtTime
             isVideoLoaded = true
             retriever.release()
         } catch (e: Exception) {
-            Log.e("SwingPoseAnalysisScreen", "Error loading video metadata", e)
             errorMessage = "動画の読み込みに失敗しました"
         }
     }
-    
-    // Ready-to-Analyze gatekeeping
+
     val isReadyToAnalyze = isOrientationLocked && isVideoLoaded && isSurfaceReady
-    
     var showUsageLimitDialog by remember { mutableStateOf(false) }
-    var remainingCount by remember { mutableStateOf(usageManager.getRemainingCount()) }
-    
-    // Biomechanics state for real-time display
     var biomechanicsData by remember { mutableStateOf<BiomechanicsFrame?>(null) }
-    var biomechanicsHistory by remember { mutableStateOf<List<BiomechanicsFrame>>(emptyList()) }
-    
-    // クラブ選択
-    var selectedClub by remember { mutableStateOf(com.swingtrace.aicoaching.utils.DistanceEstimator.ClubType.DRIVER) }
-    var showClubSelector by remember { mutableStateOf(false) }
-    
-    // ExoPlayerの初期化
+
     val exoPlayer = remember {
         ExoPlayer.Builder(context).build().apply {
             setMediaItem(MediaItem.fromUri(videoUri))
             prepare()
         }
     }
-    
-    // PoseDetectorの初期化
+
     val poseDetector = remember { PoseDetector(context) }
-    
     var isAnalyzing by remember { mutableStateOf(false) }
     var analysisProgress by remember { mutableStateOf(0f) }
     var posePoints by remember { mutableStateOf<List<Offset>>(emptyList()) }
     var allPoses by remember { mutableStateOf<List<List<Offset>>>(emptyList()) }
-    var videoWidth by remember { mutableStateOf(1920) }
-    var videoHeight by remember { mutableStateOf(1080) }
-    var frameDuration by remember { mutableStateOf(100L) } // ms
+    var frameDuration by remember { mutableStateOf(100L) }
     var analysisResult by remember { mutableStateOf<com.golftrajectory.app.SwingAnalysisResult?>(null) }
-    
     val swingAnalyzer = remember { com.golftrajectory.app.PoseSwingAnalyzer() }
     val isLitePlan = planTier == Plan.PRACTICE
-    
-    // 動画の再生位置を監視
+
+    // 解析完了後の自動再生フック
+    LaunchedEffect(analysisResult) {
+        if (analysisResult != null) {
+            delay(500) // 解析直後の余韻を持たせてから再生
+            exoPlayer.play()
+        }
+    }
+
     LaunchedEffect(allPoses) {
         if (allPoses.isNotEmpty()) {
             while (true) {
-                kotlinx.coroutines.delay(50) // 20fps
+                kotlinx.coroutines.delay(50)
                 val currentPosition = exoPlayer.currentPosition
-                val frameIndex = (currentPosition / frameDuration).toInt()
-                    .coerceIn(0, allPoses.size - 1)
+                val frameIndex = (currentPosition / frameDuration).toInt().coerceIn(0, allPoses.size - 1)
                 posePoints = allPoses[frameIndex]
             }
         }
     }
-    
-    // クリーンアップ
+
     DisposableEffect(Unit) {
         onDispose {
             exoPlayer.release()
             poseDetector.close()
         }
     }
-    
-    // Collect biomechanics data
+
     LaunchedEffect(poseDetector) {
         poseDetector.poseResultFlow.collect { resultPair ->
-            val biomechanicsFrame = resultPair.second
-            biomechanicsData = biomechanicsFrame
-            
-            // Update local biomechanics history (ring buffer for last 100 frames)
-            biomechanicsFrame?.let { newFrame ->
-                val currentHistory = biomechanicsHistory.toMutableList()
-                currentHistory.add(newFrame)
-                
-                // Keep only the last 100 frames
-                if (currentHistory.size > 100) {
-                    currentHistory.removeAt(0)
-                }
-                
-                biomechanicsHistory = currentHistory
-            }
+            biomechanicsData = resultPair.second
         }
     }
-    
-    // 座標変換関数（レターボックス補正）
-    fun transformCoordinatesForLetterbox(
-        points: List<Offset>,
-        letterboxRatio: Float
-    ): List<Offset> {
-        if (letterboxRatio == 1.0f) return points // 補正不要
-        
-        val letterboxWidth = (1.0f - letterboxRatio) / 2.0f // 左右の黒帯の幅
+
+    fun transformCoordinatesForLetterbox(points: List<Offset>, letterboxRatio: Float): List<Offset> {
+        if (letterboxRatio == 1.0f) return points
+        val letterboxWidth = (1.0f - letterboxRatio) / 2.0f
         return points.map { point ->
-            // レターボックス内の有効エリアに座標を再マッピング
             val normalizedX = (point.x - letterboxWidth) / letterboxRatio
-            Offset(
-                x = normalizedX.coerceIn(0f, 1f),
-                y = point.y // Y座標はそのまま
-            )
+            Offset(x = normalizedX.coerceIn(0f, 1f), y = point.y)
         }
     }
-    
-    // 分析開始
-    fun startAnalysis() {
-        // Ready-to-Analyze gatekeeping
-        if (!isReadyToAnalyze) {
-            Log.w("SwingPoseAnalysisScreen", "Not ready to analyze: orientation=$isOrientationLocked, video=$isVideoLoaded, surface=$isSurfaceReady")
-            return
+
+    // Bitmapを回転させて正規化する関数
+    fun rotateBitmap(bitmap: Bitmap, rotation: Int): Bitmap {
+        if (rotation == 0) return bitmap
+
+        val matrix = Matrix().apply {
+            postRotate(rotation.toFloat())
         }
-        
-        // 使用回数チェック
+        return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+    }
+
+    // 安全な動画ファイルアクセス関数
+    suspend fun waitForVideoReady(uri: Uri, maxRetries: Int = 10): Boolean {
+        repeat(maxRetries) { attempt ->
+            try {
+                val retriever = MediaMetadataRetriever()
+                retriever.setDataSource(context, uri)
+                val duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                retriever.release()
+
+                if (duration != null && duration.toLongOrNull() != null) {
+                    return true // ファイル準備完了
+                }
+            } catch (e: Exception) {
+                Log.w("SwingPoseAnalysisScreen", "Video not ready, attempt ${attempt + 1}/$maxRetries")
+            }
+            delay(500) // 0.5秒待機
+        }
+        return false // 準備できなかった
+    }
+
+    fun startAnalysis() {
+        if (!isReadyToAnalyze) return
         if (!usageManager.canUse()) {
             showUsageLimitDialog = true
             return
         }
-        
-        // 使用回数をカウント
         usageManager.incrementUsage()
-        remainingCount = usageManager.getRemainingCount()
-        
-        // 分析処理を開始
         isAnalyzing = true
         errorMessage = null
-        
-        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
+
+        kotlinx.coroutines.CoroutineScope(Dispatchers.Main).launch {
             try {
+                // 安全なファイル準備待機
+                if (!waitForVideoReady(videoUri)) {
+                    withContext(Dispatchers.Main) {
+                        errorMessage = "動画ファイルの準備ができませんでした。再度お試しください。"
+                        isAnalyzing = false
+                    }
+                    return@launch
+                }
+
+                val detectedPoses = mutableListOf<List<Offset>>()
                 withContext(Dispatchers.Default) {
+                    val retriever = MediaMetadataRetriever()
                     try {
-                        val retriever = MediaMetadataRetriever()
                         retriever.setDataSource(context, videoUri)
-                        
-                        // 動画情報を取得
-                        val duration = retriever.extractMetadata(
-                            MediaMetadataRetriever.METADATA_KEY_DURATION
-                        )?.toLongOrNull() ?: 0L
-                        
-                        val width = retriever.extractMetadata(
-                            MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH
-                        )?.toIntOrNull() ?: 1920
-                        
-                        val height = retriever.extractMetadata(
-                            MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT
-                        )?.toIntOrNull() ?: 1080
-                        
-                        withContext(Dispatchers.Main) {
-                            videoWidth = width
-                            videoHeight = height
-                        }
-                        
-                        // 縦動画のアスペクト比補正
-                        val isPortrait = videoRotation == 90 || videoRotation == 270
-                        val aspectRatio = if (isPortrait) {
-                            height.toFloat() / width.toFloat()
-                        } else {
-                            width.toFloat() / height.toFloat()
-                        }
-                        
-                        // フレームを解析（100msごと）
-                        val frameInterval = 100_000L // マイクロ秒
+                        val duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+
+                        val frameInterval = 100_000L
                         var currentTime = 0L
-                        val detectedPoses = mutableListOf<List<Offset>>()
-                        
+
                         while (currentTime < duration * 1000) {
-                            try {
-                                // フレームを取得
-                                val frame = retriever.getFrameAtTime(
-                                    currentTime,
-                                    MediaMetadataRetriever.OPTION_CLOSEST_SYNC
-                                )
-                                
-                                frame?.let { bitmap ->
-                                    try {
-                                        // MediaPipeで姿勢検出
-                                        val result = poseDetector.detectPose(bitmap)
-                                        
-                                        result?.let { poseResult ->
-                                            if (poseResult.landmarks().isNotEmpty()) {
-                                                // 骨格の点を抽出（正規化座標のまま保存）
-                                                val landmarks = poseResult.landmarks()[0]
-                                                val points = landmarks.map { landmark ->
-                                                    Offset(
-                                                        landmark.x(),
-                                                        landmark.y()
-                                                    )
-                                                }
-                                                
-                                                // レターボックス補正を適用
-                                                val correctedPoints = transformCoordinatesForLetterbox(points, letterboxRatio)
-                                                detectedPoses.add(correctedPoints)
-                                            }
+                            val frame = retriever.getFrameAtTime(currentTime, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                            frame?.let { bitmap ->
+                                try {
+                                    // 回転角を補正して正規化
+                                    val rotatedBitmap = rotateBitmap(bitmap, videoRotation)
+                                    
+                                    val result = poseDetector.detectPose(rotatedBitmap)
+                                    result?.let { poseResult ->
+                                        if (poseResult.landmarks().isNotEmpty()) {
+                                            val landmarks = poseResult.landmarks()[0]
+                                            val points = landmarks.map { Offset(it.x(), it.y()) }
+                                            detectedPoses.add(transformCoordinatesForLetterbox(points, letterboxRatio))
                                         }
-                                    } catch (e: Exception) {
-                                        Log.e("SwingPoseAnalysisScreen", "Error processing frame", e)
                                     }
-                                }
-                                
-                                currentTime += frameInterval
-                                
-                                // 進捗更新
-                                withContext(Dispatchers.Main) {
-                                    analysisProgress = currentTime.toFloat() / (duration * 1000)
-                                }
-                            } catch (e: Exception) {
-                                Log.e("SwingPoseAnalysisScreen", "Error in frame processing loop", e)
-                            }
-                        }
-                        
-                        retriever.release()
-                        
-                        withContext(Dispatchers.Main) {
-                            if (detectedPoses.isNotEmpty()) {
-                                // 全フレームの姿勢を保存
-                                allPoses = detectedPoses
-                                // 最初のフレームの骨格を表示
-                                posePoints = detectedPoses.first()
-                                
-                                // スイング分析を実行
-                                analysisResult = swingAnalyzer.analyze(detectedPoses)
-                                
-                                // 履歴に保存
-                                analysisResult?.let { result ->
-                                    try {
-                                        val database = com.swingtrace.aicoaching.database.AppDatabase.getDatabase(context)
-                                        val userPreferences = com.golftrajectory.app.UserPreferences(context)
-                                        val userId = userPreferences.getUserId() ?: "guest"
-                                        
-                                        val historyEntity = com.swingtrace.aicoaching.database.AnalysisHistoryEntity(
-                                            userId = userId,
-                                            timestamp = System.currentTimeMillis(),
-                                            videoUri = videoUri.toString(),
-                                            ballDetected = true,
-                                            carryDistance = 0.0,
-                                            maxHeight = 0.0,
-                                            flightTime = 0.0,
-                                            confidence = 0.8,
-                                            aiAdvice = "分析完了",
-                                            aiScore = 85,
-                                            swingSpeed = 0.0,
-                                            backswingTime = 0.0,
-                                            downswingTime = 0.0,
-                                            impactSpeed = 0.0,
-                                            tempo = 0.0,
-                                            headStability = result.headStability.toDouble(),
-                                            shoulderRotation = result.shoulderRotation.toDouble(),
-                                            hipRotation = result.hipRotation.toDouble(),
-                                            weightTransfer = result.weightTransfer.toDouble(),
-                                            swingPlane = "正常"
-                                        )
-                                        
-                                        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-                                            database.analysisHistoryDao().insert(historyEntity)
-                                        }
-                                    } catch (e: Exception) {
-                                        Log.e("SwingPoseAnalysisScreen", "Error saving analysis result", e)
+                                    
+                                    // メモリ解放
+                                    if (rotatedBitmap != bitmap) {
+                                        rotatedBitmap.recycle()
+                                    } else {
+                                        // 何もしない
                                     }
+                                } catch (e: Exception) {
+                                    Log.e("SwingPoseAnalysisScreen", "Error processing frame", e)
                                 }
-                                
-                                isAnalyzing = false
-                            } else {
-                                errorMessage = "姿勢を検出できませんでした\n\n人物が画面に映っているか確認してください"
-                                isAnalyzing = false
                             }
-                        }
-                    } catch (e: Exception) {
-                        Log.e("SwingPoseAnalysisScreen", "Error during video analysis", e)
-                        withContext(Dispatchers.Main) {
-                            errorMessage = "この動画形式はサポート外です"
-                            Toast.makeText(context, "この動画形式はサポート外です", Toast.LENGTH_SHORT).show()
-                            delay(2000)
-                            onBack() // 安全に前の画面に戻る
+                            currentTime += frameInterval
+                            withContext(Dispatchers.Main) { analysisProgress = currentTime.toFloat() / (duration * 1000) }
                         }
                     } finally {
-                        try {
-                            // retriever is already released in the inner finally block
-                        } catch (e: Exception) {
-                            Log.e("SwingPoseAnalysisScreen", "Error in finally block", e)
-                        }
+                        retriever.release()
                     }
                 }
-            } catch (e: Exception) {
-                Log.e("SwingPoseAnalysisScreen", "Critical error in analysis", e)
+
                 withContext(Dispatchers.Main) {
-                    errorMessage = "解析中にエラーが発生しました: ${e.message}"
-                    Toast.makeText(context, "この動画形式はサポート外です", Toast.LENGTH_SHORT).show()
+                    if (detectedPoses.isNotEmpty()) {
+                        allPoses = detectedPoses
+                        posePoints = detectedPoses.first()
+                        analysisResult = swingAnalyzer.analyze(detectedPoses)
+                    } else {
+                        errorMessage = "姿勢を検出できませんでした"
+                    }
                     isAnalyzing = false
                 }
-            } finally {
+            } catch (e: Exception) {
+                Log.e("SwingPoseAnalysisScreen", "Analysis error", e)
                 withContext(Dispatchers.Main) {
+                    errorMessage = "解析中にエラーが発生しました: ${e.message}"
                     isAnalyzing = false
                 }
             }
         }
     }
-    
-    // 自動開始処理
+
     LaunchedEffect(isReadyToAnalyze) {
         if (isReadyToAnalyze && autoStart) {
-            delay(500) // UIが安定するのを待ってから自動開始
+            delay(500)
             startAnalysis()
         }
     }
-    
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { 
-                    Text(if (analysisMode == "rear") "後方スイング分析" else "正面スイング分析") 
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, "戻る")
-                    }
+
+    // 完全フルスクリーンのBoxレイアウト（Scaffoldを廃止）
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black)
+    ) {
+        // 1. 全画面動画プレーヤー
+        AndroidView(
+            factory = { ctx ->
+                PlayerView(ctx).apply {
+                    player = exoPlayer
+                    useController = true
+                    // 強制的にフルスクリーン（ズームして枠を消す）
+                    resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                    try { isSurfaceReady = true } catch (e: Exception) { isSurfaceReady = true }
                 }
-            )
-        }
-    ) { padding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black) // 黒背景で白飛びを防止
-                .padding(padding)
-        ) {
-            // 動画プレーヤー
-            AndroidView(
-                factory = { ctx ->
-                    PlayerView(ctx).apply {
-                        player = exoPlayer
-                        useController = true
-                        Log.d("SwingPoseAnalysisScreen", "PlayerView created")
-                        
-                        // Surface準備完了を検知
-                        try {
-                            // Surface準備完了を検知（簡易版）
-                            isSurfaceReady = true
-                            Log.d("SwingPoseAnalysisScreen", "Surface ready flag set")
-                        } catch (e: Exception) {
-                            Log.e("SwingPoseAnalysisScreen", "Error setting surface callback", e)
-                            // Surface callbackの設定に失敗しても続行
-                            isSurfaceReady = true
-                        }
-                    }
-                },
-                modifier = Modifier.fillMaxSize()
-            )
-            
-            // プレビュー表示（準備中）
-            if (!isReadyToAnalyze) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    // プレビュー画像があれば表示
-                    previewFrame?.let { frame ->
-                        Image(
-                            bitmap = frame.asImageBitmap(),
-                            contentDescription = "動画プレビュー",
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Fit
-                        )
-                    }
-                    
-                    // 準備中表示
-                    Column(
-                        modifier = Modifier
-                            .background(Color.Black.copy(alpha = 0.7f))
-                            .padding(24.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        CircularProgressIndicator(
-                            color = Color.White,
-                            modifier = Modifier.size(48.dp)
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        
-                        val statusText = when {
-                            !isOrientationLocked -> "画面向きを調整中..."
-                            !isVideoLoaded -> "動画を読み込み中..."
-                            !isSurfaceReady -> "描画準備中..."
-                            else -> "準備完了"
-                        }
-                        
-                        Text(
-                            text = statusText,
-                            color = Color.White,
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        
-                        Spacer(modifier = Modifier.height(8.dp))
-                        
-                        Text(
-                            text = "少々お待ちください",
-                            color = Color.White.copy(alpha = 0.8f),
-                            fontSize = 14.sp
-                        )
-                    }
-                }
-            } else if (previewFrame != null && !isAnalyzing) {
-                // 準備完了後のプレビュー
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Image(
-                        bitmap = previewFrame!!.asImageBitmap(),
-                        contentDescription = "動画プレビュー",
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Fit
-                    )
-                    
-                    // 解析開始ボタン（解析完了後は非表示）
-                    if (analysisResult == null) {
-                        Button(
-                            onClick = { startAnalysis() },
-                            modifier = Modifier
-                                .background(Color.Blue.copy(alpha = 0.8f))
-                                .padding(16.dp)
-                        ) {
-                            Text(
-                                text = "分析開始",
-                                color = Color.White,
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
-                }
-            }
-            
-            // 骨格表示（オーバーレイ）
-            if (posePoints.isNotEmpty()) {
-                Canvas(modifier = Modifier.fillMaxSize()) {
-                    // 正規化座標を画面座標に変換
-                    val scaleX = size.width
-                    val scaleY = size.height
-                    
-                    // レターボックス補正を適用
-                    val correctedPoints = transformCoordinatesForLetterbox(posePoints, letterboxRatio)
-                    val scaledPoints = correctedPoints.map { point ->
-                        Offset(
-                            point.x * scaleX,
-                            point.y * scaleY
-                        )
-                    }
-                    
-                    // 部位ごとの色を決定する関数
-                    fun getPartColor(partType: String): Color {
-                        analysisResult?.let { result ->
-                            return when (partType) {
-                                "head" -> if (result.headStability >= 70) Color(0xFF4CAF50) else Color(0xFFF44336)
-                                "shoulder" -> when {
-                                    result.shoulderRotation in 35f..65f -> Color(0xFF4CAF50)
-                                    result.shoulderRotation in 25f..75f -> Color(0xFFFFC107)
-                                    else -> Color(0xFFF44336)
-                                }
-                                else -> Color(0xFF4CAF50)
-                            }
-                        }
-                        return Color(0xFF4CAF50)
-                    }
-                    
-                    // 骨格を描画
-                    drawSkeleton(scaledPoints) { partType -> getPartColor(partType) }
-                }
-            }
-            
-            // 分析進捗
-            if (isAnalyzing) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.5f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        CircularProgressIndicator(
-                            color = Color.White,
-                            modifier = Modifier.size(64.dp)
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text(
-                            text = "分析中... ${(analysisProgress * 100).toInt()}%",
-                            color = Color.White,
-                            fontSize = 18.sp
-                        )
-                    }
-                }
-            }
-            
-            // エラーメッセージ
-            errorMessage?.let { error ->
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.7f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = Color.White)
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(16.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Text(
-                                text = "エラー",
-                                fontSize = 20.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.Red
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = error,
-                                fontSize = 16.sp,
-                                color = Color.Black
-                            )
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Button(onClick = onBack) {
-                                Text("戻る")
-                            }
-                        }
-                    }
-                }
-            }
-            
-            // バイオメカニクスHUD
-            if (biomechanicsData != null && !isLitePlan) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(16.dp),
-                    contentAlignment = Alignment.TopStart
-                ) {
-                    biomechanicsData?.let { data ->
-                        BiomechanicsHud(frame = data)
-                    }
-                }
-            }
-            
-            // 分析結果ボタン
-            if (analysisResult != null && !isAnalyzing) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(16.dp),
-                    contentAlignment = Alignment.BottomEnd
-                ) {
-                    FloatingActionButton(
-                        onClick = { onAICoachClick(analysisResult!!) },
-                        containerColor = Color(0xFF2196F3)
-                    ) {
-                        Icon(Icons.Default.Info, contentDescription = "AIコーチ")
-                    }
-                }
-            }
-        }
-    }
-    
-    // 使用回数制限ダイアログ
-    if (showUsageLimitDialog) {
-        AlertDialog(
-            onDismissRequest = { showUsageLimitDialog = false },
-            title = { Text("使用回数制限") },
-            text = { 
-                Text("今日の分析回数が上限に達しました。\n明日までお待ちいただくか、プランをアップグレードしてください。")
             },
-            confirmButton = {
-                TextButton(onClick = { showUsageLimitDialog = false }) {
-                    Text("OK")
+            modifier = Modifier.fillMaxSize()
+        )
+
+        // 2. プレビュー画像（解析前）動画を隠さないようにフェード対応等の工夫が必要ですが、
+        // 今回はシンプルに動画プレーヤーの上にプレビューを被せるのはやめ、黒背景＋インジケーターのみにします。
+        if (!isReadyToAnalyze) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.8f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator(color = Color.White, modifier = Modifier.size(48.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(text = "映像を準備中...", color = Color.White, fontWeight = FontWeight.Bold)
                 }
             }
-        )
+        }
+
+        // 3. 骨格描画（信号機カラー付きプロ仕様スケルトン）
+        if (posePoints.isNotEmpty()) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val scaleX = size.width
+                val scaleY = size.height
+                val correctedPoints = transformCoordinatesForLetterbox(posePoints, letterboxRatio)
+                val scaledPoints = correctedPoints.map { Offset(it.x * scaleX, it.y * scaleY) }
+
+                drawMediaPipeSkeleton(scaledPoints, analysisResult)
+            }
+        }
+
+        // 4. 分析中プログレス
+        if (isAnalyzing) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.5f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator(color = Color(0xFF2196F3), modifier = Modifier.size(64.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(text = "AI解析中... ${(analysisProgress * 100).toInt()}%", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+
+        // 5. 中央の分析開始ボタン（解析完了前のみ表示）
+        if (isReadyToAnalyze && !isAnalyzing && analysisResult == null) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Button(
+                    onClick = { startAnalysis() },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2196F3))
+                ) {
+                    Text("分析開始", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+
+        // 6. エラー表示
+        errorMessage?.let { error ->
+            Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.8f)), contentAlignment = Alignment.Center) {
+                Card(modifier = Modifier.padding(16.dp)) {
+                    Column(modifier = Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(text = "解析エラー", color = Color.Red, fontWeight = FontWeight.Bold)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(text = error)
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Button(onClick = onBack) { Text("戻る") }
+                    }
+                }
+            }
+        }
+
+        // 7. オーバーレイ：戻るボタン（左上）
+        IconButton(
+            onClick = onBack,
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(16.dp)
+                .background(Color.Black.copy(alpha = 0.4f), CircleShape)
+        ) {
+            Icon(Icons.Default.ArrowBack, contentDescription = "戻る", tint = Color.White)
+        }
+
+        // 8. オーバーレイ：AIコーチボタン（右下・解析完了後のみ）
+        if (analysisResult != null && !isAnalyzing) {
+            FloatingActionButton(
+                onClick = { onAICoachClick(analysisResult!!) },
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(24.dp),
+                containerColor = Color(0xFF2196F3)
+            ) {
+                Icon(Icons.Default.Info, contentDescription = "AIコーチ", tint = Color.White)
+            }
+        }
     }
 }
 
-// 骨格描画関数
-private fun DrawScope.drawSkeleton(
-    points: List<Offset>,
-    getPartColor: (String) -> Color
+// MediaPipe（33点）専用のプロ仕様骨格描画ロジック（信号機カラー対応）
+private fun DrawScope.drawMediaPipeSkeleton(
+    points: List<Offset>, 
+    analysisResult: com.golftrajectory.app.SwingAnalysisResult?
 ) {
-    // 骨格の接続関係を定義
-    val connections = listOf(
-        Pair(0, 1), // 頭-首
-        Pair(1, 2), // 首-左肩
-        Pair(1, 5), // 首-右肩
-        Pair(2, 3), // 左肩-左肘
-        Pair(3, 4), // 左肘-左手首
-        Pair(5, 6), // 右肩-右肘
-        Pair(6, 7), // 右肘-右手首
-        Pair(1, 8), // 首-左腰
-        Pair(1, 11), // 首-右腰
-        Pair(8, 9), // 左腰-左膝
-        Pair(9, 10), // 左膝-左足首
-        Pair(11, 12), // 右腰-右膝
-        Pair(12, 13), // 右膝-右足首
-    )
+    val strokeWidth = 6.dp.toPx()
+    val jointRadius = 4.dp.toPx()
     
-    // 骨格の線を描画
-    connections.forEach { connection: Pair<Int, Int> ->
-        val (start, end) = connection
-        if (start < points.size && end < points.size) {
-            drawLine(
-                color = Color.White,
-                start = points[start],
-                end = points[end],
-                strokeWidth = 4.dp.value
-            )
+    // 信号機カラー判定関数
+    fun getTrafficLightColor(score: Float): Color {
+        return when {
+            score >= 70f -> Color(0xFF4CAF50) // 緑：適正
+            score >= 40f -> Color(0xFFFFC107) // 黄：要注意
+            else -> Color(0xFFF44336) // 赤：不良
         }
     }
     
-    // 関節の点を描画
-    points.forEach { point ->
-        drawCircle(
-            color = Color.Red,
-            radius = 6.dp.value,
-            center = point
-        )
+    // 描画する接続（MediaPipe準拠）
+    // 11: 左肩, 12: 右肩, 13: 左肘, 14: 右肘, 15: 左手首, 16: 右手首
+    // 23: 左腰, 24: 右腰, 25: 左膝, 26: 右膝, 27: 左足首, 28: 右足首
+    val connections = listOf(
+        // 上半身
+        11 to 12, // 両肩
+        11 to 23, 12 to 24, // 体幹（肩から腰）
+        23 to 24, // 両腰
+        // 腕
+        11 to 13, 13 to 15, // 左腕
+        12 to 14, 14 to 16, // 右腕
+        // 脚
+        23 to 25, 25 to 27, // 左脚
+        24 to 26, 26 to 28  // 右脚
+    )
+
+    // 線の描画（信号機カラー対応）
+    connections.forEach { (start, end) ->
+        if (start < points.size && end < points.size) {
+            val lineColor = when {
+                // 肩ライン
+                (start == 11 && end == 12) -> analysisResult?.let { getTrafficLightColor(it.shoulderRotation) } ?: Color(0xCCFFFFFF)
+                // 腰ライン
+                (start == 23 && end == 24) -> analysisResult?.let { getTrafficLightColor(it.hipRotation) } ?: Color(0xCCFFFFFF)
+                // その他のライン
+                else -> Color(0xCCFFFFFF)
+            }
+            
+            drawLine(
+                color = lineColor,
+                start = points[start],
+                end = points[end],
+                strokeWidth = strokeWidth
+            )
+        }
+    }
+
+    // 関節点の描画（信号機カラー対応）
+    points.forEachIndexed { index, point ->
+        if (index < points.size) {
+            val (jointColor, radius) = when (index) {
+                // 肩：shoulderRotationスコア
+                11, 12 -> {
+                    val color = analysisResult?.let { getTrafficLightColor(it.shoulderRotation) } ?: Color(0xCCFFFFFF)
+                    color to jointRadius * 1.5f
+                }
+                // 腰：hipRotationスコア
+                23, 24 -> {
+                    val color = analysisResult?.let { getTrafficLightColor(it.hipRotation) } ?: Color(0xCCFFFFFF)
+                    color to jointRadius * 1.5f
+                }
+                // 膝：weightTransferスコア
+                25, 26 -> {
+                    val color = analysisResult?.let { getTrafficLightColor(it.weightTransfer) } ?: Color(0xCCFFFFFF)
+                    color to jointRadius
+                }
+                // その他の関節
+                else -> Color(0xCCFFFFFF) to jointRadius
+            }
+            
+            drawCircle(color = jointColor, radius = radius, center = point)
+            
+            // 重要関節の白い中心点
+            if (index in listOf(11, 12, 23, 24)) {
+                drawCircle(color = Color.White, radius = jointRadius * 0.5f, center = point)
+            }
+        }
     }
 }
