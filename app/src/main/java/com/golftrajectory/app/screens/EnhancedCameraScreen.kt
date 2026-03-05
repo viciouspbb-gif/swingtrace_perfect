@@ -6,28 +6,34 @@ import android.net.Uri
 import android.provider.MediaStore
 import android.widget.Toast
 import androidx.camera.core.CameraSelector
-import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.video.*
 import androidx.camera.view.PreviewView
+import android.content.pm.ActivityInfo
+import android.content.res.Configuration
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.FiberManualRecord
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.video.VideoCapture
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
 import com.golftrajectory.app.utils.LockScreenOrientation
-import android.content.pm.ActivityInfo
 import com.swingtrace.aicoaching.repository.SwingAnalysisRepository
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -50,6 +56,10 @@ fun EnhancedCameraScreen(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
+    
+    // 現在の向きを検出
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
     
     var isRecording by remember { mutableStateOf(false) }
     var recordingState by remember { mutableStateOf<Recording?>(null) }
@@ -106,7 +116,42 @@ fun EnhancedCameraScreen(
             )
         }
         
-        // 録画中インジケーター
+        // 横向きガイド（非横向きの場合）
+            if (!isLandscape) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.8f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(32.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color.White)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                text = "横にしてください",
+                                fontSize = 24.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.Red
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text(
+                                text = "スイング分析は横向きで撮影してください。\nスマホを横にしてから録画を開始できます。",
+                                fontSize = 16.sp,
+                                color = Color.Black
+                            )
+                        }
+                    }
+                }
+            }
+            
+            // 録画中インジケーター
         if (isRecording) {
             Row(
                 modifier = Modifier
@@ -139,9 +184,11 @@ fun EnhancedCameraScreen(
                 .padding(bottom = 120.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // 録画ボタン
+            // 録画ボタン（横向きの場合のみ有効）
             FloatingActionButton(
                 onClick = {
+                    if (!isLandscape) return@FloatingActionButton // 横向きでなければ無効
+                    
                     if (isRecording) {
                         // 録画停止
                         recordingState?.stop()
@@ -166,7 +213,7 @@ fun EnhancedCameraScreen(
                     }
                 },
                 modifier = Modifier.size(80.dp),
-                containerColor = if (isRecording) Color.Red else MaterialTheme.colorScheme.primary
+                containerColor = if (!isLandscape) Color.Gray else if (isRecording) Color.Red else MaterialTheme.colorScheme.primary
             ) {
                 Icon(
                     imageVector = if (isRecording) Icons.Default.Stop else Icons.Default.FiberManualRecord,

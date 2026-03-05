@@ -128,6 +128,14 @@ fun SwingPoseAnalysisScreen(
             val width = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: 1920
             val height = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull() ?: 1080
             
+            // 厳格な横向き動画バリデーション
+            if (height > width) {
+                // 縦動画は即座に拒否
+                errorMessage = "スイング分析は横向きで撮影された動画のみ対応しています。スマホを横にして撮り直してください。"
+                retriever.release()
+                return@LaunchedEffect
+            }
+            
             // 縦動画の判定とレターボックス比率計算
             val isPortrait = rotation == 90 || rotation == 270
             if (isPortrait) {
@@ -557,19 +565,21 @@ fun SwingPoseAnalysisScreen(
                         contentScale = ContentScale.Fit
                     )
                     
-                    // 解析開始ボタン
-                    Button(
-                        onClick = { startAnalysis() },
-                        modifier = Modifier
-                            .background(Color.Blue.copy(alpha = 0.8f))
-                            .padding(16.dp)
-                    ) {
-                        Text(
-                            text = "分析開始",
-                            color = Color.White,
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold
-                        )
+                    // 解析開始ボタン（解析完了後は非表示）
+                    if (analysisResult == null) {
+                        Button(
+                            onClick = { startAnalysis() },
+                            modifier = Modifier
+                                .background(Color.Blue.copy(alpha = 0.8f))
+                                .padding(16.dp)
+                        ) {
+                            Text(
+                                text = "分析開始",
+                                color = Color.White,
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
                 }
             }
