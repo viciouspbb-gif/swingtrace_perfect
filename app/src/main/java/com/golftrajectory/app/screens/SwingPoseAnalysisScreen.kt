@@ -68,8 +68,17 @@ fun SwingPoseAnalysisScreen(
     onBack: () -> Unit,
     onAICoachClick: (com.golftrajectory.app.SwingAnalysisResult) -> Unit = {}
 ) {
-    var showDetailScreen by remember { mutableStateOf(false) }
+    // 物理的な横固定（UI描画前に強制執行）
     val context = LocalContext.current
+    val activity = (context as? ComponentActivity)
+    
+    // 1ピクセルでも描画される前に物理的に横固定
+    LaunchedEffect(Unit) {
+        activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+        delay(100) // 向き変更の確定を待機
+    }
+    
+    var showDetailScreen by remember { mutableStateOf(false) }
     val usageManager = remember { UsageManager(context) }
     
     // 横画面に固定（一度だけ実行）
@@ -79,7 +88,6 @@ fun SwingPoseAnalysisScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     
     DisposableEffect(lifecycleOwner) {
-        val activity = (context as? ComponentActivity)
         val originalOrientation = activity?.requestedOrientation
         
         // Activity が AttachedToWindow された瞬間に物理的にロック
