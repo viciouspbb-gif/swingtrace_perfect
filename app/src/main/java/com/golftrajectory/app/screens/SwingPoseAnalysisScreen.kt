@@ -58,6 +58,7 @@ fun SwingPoseAnalysisScreen(
     videoUri: Uri,
     analysisMode: String = "rear", // "rear" or "front"
     planTier: Plan,
+    autoStart: Boolean = false, // 自動開始フラグ
     onBack: () -> Unit,
     onAICoachClick: (com.golftrajectory.app.SwingAnalysisResult) -> Unit = {}
 ) {
@@ -75,6 +76,7 @@ fun SwingPoseAnalysisScreen(
     var videoRotation by remember { mutableStateOf(0) }
     var previewFrame by remember { mutableStateOf<Bitmap?>(null) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var letterboxRatio by remember { mutableStateOf(1.0f) } // レターボックス比率
     
     // 向きロック完了を待機
     LaunchedEffect(Unit) {
@@ -91,6 +93,22 @@ fun SwingPoseAnalysisScreen(
             // 動画の回転角を取得
             val rotation = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
             videoRotation = rotation
+            
+            // 動画のサイズを取得
+            val width = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: 1920
+            val height = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull() ?: 1080
+            
+            // 縦動画の判定とレターボックス比率計算
+            val isPortrait = rotation == 90 || rotation == 270
+            if (isPortrait) {
+                // 縦動画の場合、横画面での表示比率を計算
+                val videoAspectRatio = height.toFloat() / width.toFloat() // 実際の動画比率（縦長）
+                val screenAspectRatio = 16f / 9f // 画面比率（横長）
+                letterboxRatio = screenAspectRatio / videoAspectRatio // レターボックス比率
+                Log.d("SwingPoseAnalysisScreen", "Portrait video detected: ${width}x${height}, letterbox ratio: $letterboxRatio")
+            } else {
+                letterboxRatio = 1.0f
+            }
             
             // プレビュー用の最初のフレームを取得
             val firstFrame = retriever.frameAtTime
@@ -183,6 +201,24 @@ fun SwingPoseAnalysisScreen(
         }
     }
     
+    // 座標変換関数（レターボックス補正）
+    fun transformCoordinatesForLetterbox(
+        points: List<Offset>,
+        letterboxRatio: Float
+    ): List<Offset> {
+        if (letterboxRatio == 1.0f) return points // 補正不要
+        
+        val letterboxWidth = (1.0f - letterboxRatio) / 2.0f // 左右の黒帯の幅
+        return points.map { point ->
+            // レターボックス内の有効エリアに座標を再マッピング
+            val normalizedX = (point.x - letterboxWidth) / letterboxRatio
+            Offset(
+                x = normalizedX.coerceIn(0f, 1f),
+                y = point.y // Y座標はそのまま
+            )
+        }
+    }
+    
     // 分析開始
     fun startAnalysis() {
         // Ready-to-Analyze gatekeeping
@@ -266,7 +302,10 @@ fun SwingPoseAnalysisScreen(
                                                         landmark.y()
                                                     )
                                                 }
-                                                detectedPoses.add(points)
+                                                
+                                                // レターボックス補正を適用
+                                                val correctedPoints = transformCoordinatesForLetterbox(points, letterboxRatio)
+                                                detectedPoses.add(correctedPoints)
                                             }
                                         }
                                     } catch (e: Exception) {
@@ -369,6 +408,14 @@ fun SwingPoseAnalysisScreen(
                     isAnalyzing = false
                 }
             }
+        }
+    }
+    
+    // 自動開始処理
+    LaunchedEffect(isReadyToAnalyze) {
+        if (isReadyToAnalyze && autoStart) {
+            delay(500) // UIが安定するのを待ってから自動開始
+            startAnalysis()
         }
     }
     
@@ -502,7 +549,10 @@ fun SwingPoseAnalysisScreen(
                     // 正規化座標を画面座標に変換
                     val scaleX = size.width
                     val scaleY = size.height
-                    val scaledPoints = posePoints.map { point ->
+                    
+                    // レターボックス補正を適用
+                    val correctedPoints = transformCoordinatesForLetterbox(posePoints, letterboxRatio)
+                    val scaledPoints = correctedPoints.map { point ->
                         Offset(
                             point.x * scaleX,
                             point.y * scaleY

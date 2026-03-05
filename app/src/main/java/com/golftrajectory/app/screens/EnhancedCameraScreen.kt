@@ -42,6 +42,7 @@ import java.util.*
 @Composable
 fun EnhancedCameraScreen(
     onVideoRecorded: (Uri) -> Unit,
+    onAutoAnalysisStart: (Uri) -> Unit = {},
     onBack: () -> Unit
 ) {
     // 横画面に固定
@@ -156,7 +157,10 @@ fun EnhancedCameraScreen(
                             },
                             onVideoSaved = { uri ->
                                 recordedVideoUri = uri
+                                // 自動保存＆即時解析開始
                                 onVideoRecorded(uri)
+                                // 録画完了後、自動的に解析画面へ遷移して解析開始
+                                onAutoAnalysisStart(uri)
                             }
                         )
                     }

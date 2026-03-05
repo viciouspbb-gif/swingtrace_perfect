@@ -555,6 +555,11 @@ class NewMainActivity : ComponentActivity() {
                                     // 直接バイオメカニクス解析画面へ遷移（オンデバイス処理）
                                     navController.navigate("poseAnalysis?videoUri=${uri}")
                                 },
+                                onAutoAnalysisStart = { uri ->
+                                    currentVideoUri = uri
+                                    // 自動で解析画面へ遷移
+                                    navController.navigate("swingAnalysis")
+                                },
                                 onBack = {
                                     navController.popBackStack()
                                 }
