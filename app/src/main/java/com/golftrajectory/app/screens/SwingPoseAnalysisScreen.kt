@@ -478,22 +478,13 @@ fun SwingPoseAnalysisScreen(
     }
 }
 
-// MediaPipe（33点）専用のプロ仕様骨格描画ロジック（信号機カラー対応）
+// MediaPipe（33点）専用のプロ仕様骨格描画ロジック（一時安定化版）
 private fun DrawScope.drawMediaPipeSkeleton(
     points: List<Offset>, 
     analysisResult: com.golftrajectory.app.SwingAnalysisResult?
 ) {
     val strokeWidth = 6.dp.toPx()
     val jointRadius = 4.dp.toPx()
-    
-    // 信号機カラー判定関数
-    fun getTrafficLightColor(score: Float): Color {
-        return when {
-            score >= 70f -> Color(0xFF4CAF50) // 緑：適正
-            score >= 40f -> Color(0xFFFFC107) // 黄：要注意
-            else -> Color(0xFFF44336) // 赤：不良
-        }
-    }
     
     // 描画する接続（MediaPipe準拠）
     // 11: 左肩, 12: 右肩, 13: 左肘, 14: 右肘, 15: 左手首, 16: 右手首
@@ -511,15 +502,13 @@ private fun DrawScope.drawMediaPipeSkeleton(
         24 to 26, 26 to 28  // 右脚
     )
 
-    // 線の描画（信号機カラー対応）
+    // 線の描画（一時安定化：ロイヤルブルーと白）
     connections.forEach { (start, end) ->
         if (start < points.size && end < points.size) {
             val lineColor = when {
-                // 肩ライン
-                (start == 11 && end == 12) -> analysisResult?.let { getTrafficLightColor(it.shoulderRotation) } ?: Color(0xCCFFFFFF)
-                // 腰ライン
-                (start == 23 && end == 24) -> analysisResult?.let { getTrafficLightColor(it.hipRotation) } ?: Color(0xCCFFFFFF)
-                // その他のライン
+                // 肩ラインと腰ライン：ロイヤルブルー（強調）
+                (start == 11 && end == 12) || (start == 23 && end == 24) -> Color(0xFF4169E1) // ロイヤルブルー
+                // その他のライン：白
                 else -> Color(0xCCFFFFFF)
             }
             
@@ -532,26 +521,13 @@ private fun DrawScope.drawMediaPipeSkeleton(
         }
     }
 
-    // 関節点の描画（信号機カラー対応）
+    // 関節点の描画（一時安定化：ロイヤルブルーと白）
     points.forEachIndexed { index, point ->
         if (index < points.size) {
             val (jointColor, radius) = when (index) {
-                // 肩：shoulderRotationスコア
-                11, 12 -> {
-                    val color = analysisResult?.let { getTrafficLightColor(it.shoulderRotation) } ?: Color(0xCCFFFFFF)
-                    color to jointRadius * 1.5f
-                }
-                // 腰：hipRotationスコア
-                23, 24 -> {
-                    val color = analysisResult?.let { getTrafficLightColor(it.hipRotation) } ?: Color(0xCCFFFFFF)
-                    color to jointRadius * 1.5f
-                }
-                // 膝：weightTransferスコア
-                25, 26 -> {
-                    val color = analysisResult?.let { getTrafficLightColor(it.weightTransfer) } ?: Color(0xCCFFFFFF)
-                    color to jointRadius
-                }
-                // その他の関節
+                // 肩と腰：ロイヤルブルー（強調部）
+                11, 12, 23, 24 -> Color(0xFF4169E1) to jointRadius * 1.5f
+                // その他の関節：白
                 else -> Color(0xCCFFFFFF) to jointRadius
             }
             
