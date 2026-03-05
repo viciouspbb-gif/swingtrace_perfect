@@ -45,6 +45,7 @@ import com.golftrajectory.app.plan.Plan
 import android.media.MediaMetadataRetriever
 import android.graphics.Bitmap
 import android.graphics.Matrix
+import android.graphics.Rect
 import android.util.Log
 import android.widget.Toast
 
@@ -84,6 +85,8 @@ fun SwingPoseAnalysisScreen(
     var isVideoLoaded by remember { mutableStateOf(false) }
     var isSurfaceReady by remember { mutableStateOf(false) }
     var videoRotation by remember { mutableStateOf(0) }
+    var videoWidth by remember { mutableStateOf(1920) }
+    var videoHeight by remember { mutableStateOf(1080) }
     var previewFrame by remember { mutableStateOf<Bitmap?>(null) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var letterboxRatio by remember { mutableStateOf(1.0f) }
@@ -103,6 +106,9 @@ fun SwingPoseAnalysisScreen(
 
             val width = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: 1920
             val height = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull() ?: 1080
+            
+            videoWidth = width
+            videoHeight = height
 
             if (height > width) {
                 errorMessage = "スイング分析は横向きで撮影された動画のみ対応しています。スマホを横にして撮り直してください。"
@@ -180,12 +186,39 @@ fun SwingPoseAnalysisScreen(
         }
     }
 
-    fun transformCoordinatesForLetterbox(points: List<Offset>, letterboxRatio: Float): List<Offset> {
-        if (letterboxRatio == 1.0f) return points
-        val letterboxWidth = (1.0f - letterboxRatio) / 2.0f
+    // アスペクト比と距離の正規化（RESIZE_MODE_FIT対応）
+    fun calculateVideoRect(canvasWidth: Float, canvasHeight: Float): Rect {
+        val videoAspectRatio = videoWidth.toFloat() / videoHeight.toFloat()
+        val canvasAspectRatio = canvasWidth / canvasHeight
+        
+        val rectWidth: Float
+        val rectHeight: Float
+        val offsetX: Float
+        val offsetY: Float
+        
+        if (videoAspectRatio > canvasAspectRatio) {
+            // 動画が横長 → 幅基準
+            rectWidth = canvasWidth
+            rectHeight = canvasWidth / videoAspectRatio
+            offsetX = 0f
+            offsetY = (canvasHeight - rectHeight) / 2f
+        } else {
+            // 動画が縦長 → 高さ基準
+            rectWidth = canvasHeight * videoAspectRatio
+            rectHeight = canvasHeight
+            offsetX = (canvasWidth - rectWidth) / 2f
+            offsetY = 0f
+        }
+        
+        return Rect(offsetX.toInt(), offsetY.toInt(), (offsetX + rectWidth).toInt(), (offsetY + rectHeight).toInt())
+    }
+    
+    // MediaPipe座標をCanvas座標に変換
+    fun transformMediaPipeToCanvas(points: List<Offset>, videoRect: Rect): List<Offset> {
         return points.map { point ->
-            val normalizedX = (point.x - letterboxWidth) / letterboxRatio
-            Offset(x = normalizedX.coerceIn(0f, 1f), y = point.y)
+            val x = videoRect.left + point.x * videoRect.width()
+            val y = videoRect.top + point.y * videoRect.height()
+            Offset(x, y)
         }
     }
 
@@ -262,7 +295,7 @@ fun SwingPoseAnalysisScreen(
                                         if (poseResult.landmarks().isNotEmpty()) {
                                             val landmarks = poseResult.landmarks()[0]
                                             val points = landmarks.map { Offset(it.x(), it.y()) }
-                                            detectedPoses.add(transformCoordinatesForLetterbox(points, letterboxRatio))
+                                            detectedPoses.add(points) // 座標変換は描画時に行う
                                         }
                                     }
                                     
@@ -317,14 +350,14 @@ fun SwingPoseAnalysisScreen(
             .fillMaxSize()
             .background(Color.Black)
     ) {
-        // 1. 全画面動画プレーヤー
+        // 1. 全画面動画プレーヤー（アスペクト比維持）
         AndroidView(
             factory = { ctx ->
                 PlayerView(ctx).apply {
                     player = exoPlayer
                     useController = true
-                    // 強制的にフルスクリーン（ズームして枠を消す）
-                    resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                    // アスペクト比を維持して画面に収める（黒帯を許容）
+                    resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
                     try { isSurfaceReady = true } catch (e: Exception) { isSurfaceReady = true }
                 }
             },
@@ -348,15 +381,16 @@ fun SwingPoseAnalysisScreen(
             }
         }
 
-        // 3. 骨格描画（信号機カラー付きプロ仕様スケルトン）
+        // 3. 骨格描画（正確な座標変換付き）
         if (posePoints.isNotEmpty()) {
             Canvas(modifier = Modifier.fillMaxSize()) {
-                val scaleX = size.width
-                val scaleY = size.height
-                val correctedPoints = transformCoordinatesForLetterbox(posePoints, letterboxRatio)
-                val scaledPoints = correctedPoints.map { Offset(it.x * scaleX, it.y * scaleY) }
+                // 動画の実際の描画エリアを計算
+                val videoRect = calculateVideoRect(size.width, size.height)
+                
+                // MediaPipe座標をCanvas座標に変換
+                val canvasPoints = transformMediaPipeToCanvas(posePoints, videoRect)
 
-                drawMediaPipeSkeleton(scaledPoints, analysisResult)
+                drawMediaPipeSkeleton(canvasPoints, analysisResult)
             }
         }
 
