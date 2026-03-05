@@ -20,13 +20,19 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
 import androidx.media3.common.MediaItem
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.LocalActivityResultRegistryOwner
+import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
 import com.golftrajectory.app.PoseDetector
 import com.golftrajectory.app.UsageManager
 import com.golftrajectory.app.plan.UserPlanManager
@@ -68,6 +74,22 @@ fun SwingPoseAnalysisScreen(
     
     // 横画面に固定（一度だけ実行）
     LockScreenOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE)
+    
+    // 物理的な向きロック（Lifecycle 連動）
+    val lifecycleOwner = LocalLifecycleOwner.current
+    
+    DisposableEffect(lifecycleOwner) {
+        val activity = (context as? ComponentActivity)
+        val originalOrientation = activity?.requestedOrientation
+        
+        // Activity が AttachedToWindow された瞬間に物理的にロック
+        activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+        
+        onDispose {
+            // 元の向きに戻す
+            originalOrientation?.let { activity?.requestedOrientation = it }
+        }
+    }
     
     // Ready-to-Analyze gatekeeping states
     var isOrientationLocked by remember { mutableStateOf(false) }
@@ -436,6 +458,7 @@ fun SwingPoseAnalysisScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                .background(Color.Black) // 黒背景で白飛びを防止
                 .padding(padding)
         ) {
             // 動画プレーヤー
