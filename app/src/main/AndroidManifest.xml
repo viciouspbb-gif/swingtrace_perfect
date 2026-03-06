@@ -48,7 +48,6 @@
         <activity
             android:name=".MainActivity"
             android:exported="false"
-            android:screenOrientation="landscape"
             android:theme="@style/Theme.GolfTrajectoryApp" />
     </application>
 

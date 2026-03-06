@@ -66,17 +66,7 @@ fun SwingPoseAnalysisScreen(
 
     val usageManager = remember { UsageManager(context) }
 
-    val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(Unit) {
-        val originalOrientation = activity?.requestedOrientation ?: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-        activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-        onDispose {
-            activity?.requestedOrientation = originalOrientation
-        }
-    }
-
     // States
-    var isOrientationLocked by remember { mutableStateOf(false) }
     var isVideoLoaded by remember { mutableStateOf(false) }
     var isSurfaceReady by remember { mutableStateOf(false) }
     var videoRotation by remember { mutableStateOf(0) }
@@ -85,11 +75,8 @@ fun SwingPoseAnalysisScreen(
     var previewFrame by remember { mutableStateOf<Bitmap?>(null) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var letterboxRatio by remember { mutableStateOf(1.0f) }
-
-    LaunchedEffect(Unit) {
-        delay(100)
-        isOrientationLocked = true
-    }
+    var analyzedFrameWidth by remember { mutableStateOf(1920f) }
+    var analyzedFrameHeight by remember { mutableStateOf(1080f) }
 
     // 動画読み込みとバリデーション
     LaunchedEffect(videoUri) {
@@ -128,7 +115,7 @@ fun SwingPoseAnalysisScreen(
         }
     }
 
-    val isReadyToAnalyze = isOrientationLocked && isVideoLoaded && isSurfaceReady
+    val isReadyToAnalyze = isVideoLoaded && isSurfaceReady
     var showUsageLimitDialog by remember { mutableStateOf(false) }
     var biomechanicsData by remember { mutableStateOf<BiomechanicsFrame?>(null) }
 
@@ -279,11 +266,23 @@ fun SwingPoseAnalysisScreen(
                         var currentTime = 0L
 
                         while (currentTime < duration * 1000) {
-                            val frame = retriever.getFrameAtTime(currentTime, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
-                            frame?.let { bitmap ->
+                            val rawBitmap = retriever.getFrameAtTime(currentTime, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                            rawBitmap?.let { bmp ->
                                 try {
-                                    // 回転角を補正して正規化
-                                    val rotatedBitmap = rotateBitmap(bitmap, videoRotation)
+                                    // 画像が横長（width > height）で、かつ回転メタデータがある場合のみ回転させる（二重回転の防止）
+                                    val shouldRotate = (videoRotation == 90 || videoRotation == 270) && (bmp.width > bmp.height)
+                                    val rotatedBitmap = if (shouldRotate) {
+                                        val matrix = android.graphics.Matrix().apply { postRotate(videoRotation.toFloat()) }
+                                        android.graphics.Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, matrix, true)
+                                    } else {
+                                        bmp
+                                    }
+                                    
+                                    // AIが実際に見た「真の画像サイズ」をStateに保存
+                                    withContext(Dispatchers.Main) {
+                                        analyzedFrameWidth = rotatedBitmap.width.toFloat()
+                                        analyzedFrameHeight = rotatedBitmap.height.toFloat()
+                                    }
                                     
                                     val result = poseDetector.detectPose(rotatedBitmap)
                                     result?.let { poseResult ->
@@ -295,10 +294,10 @@ fun SwingPoseAnalysisScreen(
                                     }
                                     
                                     // メモリ解放
-                                    if (rotatedBitmap != bitmap) {
+                                    if (rotatedBitmap != bmp) {
                                         rotatedBitmap.recycle()
                                     } else {
-                                        // 何もしない
+                                        // 元のBitmapは解放しない
                                     }
                                 } catch (e: Exception) {
                                     Log.e("SwingPoseAnalysisScreen", "Error processing frame", e)
@@ -379,27 +378,22 @@ fun SwingPoseAnalysisScreen(
         // 3. 骨格描画（完璧な数学的座標マッピング）
         if (posePoints.isNotEmpty()) {
             Canvas(modifier = Modifier.fillMaxSize()) {
-                // 1. 動画の回転状態を考慮した「実際の映像サイズ」
-                val isRotated = videoRotation == 90 || videoRotation == 270
-                val actualVideoWidth = if (isRotated) videoHeight.toFloat() else videoWidth.toFloat()
-                val actualVideoHeight = if (isRotated) videoWidth.toFloat() else videoHeight.toFloat()
-
-                // 2. Canvasサイズと映像サイズの比率（Fitスケール）
+                // 1. 画面（Canvas）のサイズ
                 val canvasWidth = size.width
                 val canvasHeight = size.height
-                val scale = minOf(canvasWidth / actualVideoWidth, canvasHeight / actualVideoHeight)
 
-                // 3. 映像が実際に描画されるサイズ
-                val drawWidth = actualVideoWidth * scale
-                val drawHeight = actualVideoHeight * scale
+                // 2. FITモードにおけるスケール値（AIが見た実際の画像サイズを基準にする）
+                val scale = minOf(canvasWidth / analyzedFrameWidth, canvasHeight / analyzedFrameHeight)
 
-                // 4. 余白（黒帯）のオフセット量（中央寄せ）
+                // 3. 画面上での「実際の映像の描画サイズ」と「余白（黒帯）のオフセット」
+                val drawWidth = analyzedFrameWidth * scale
+                val drawHeight = analyzedFrameHeight * scale
                 val offsetX = (canvasWidth - drawWidth) / 2f
                 val offsetY = (canvasHeight - drawHeight) / 2f
 
-                // 5. MediaPipe座標（0.0~1.0）の変換
+                // 4. MediaPipe座標（0.0〜1.0）の絶対マッピング
                 val scaledPoints = posePoints.map { point ->
-                    Offset(
+                    androidx.compose.ui.geometry.Offset(
                         x = offsetX + (point.x * drawWidth),
                         y = offsetY + (point.y * drawHeight)
                     )
@@ -483,8 +477,8 @@ private fun DrawScope.drawMediaPipeSkeleton(
     points: List<Offset>, 
     analysisResult: com.golftrajectory.app.SwingAnalysisResult?
 ) {
-    val strokeWidth = 6.dp.toPx()
-    val jointRadius = 4.dp.toPx()
+    val strokeWidth = 4.dp.toPx()
+    val jointRadius = 6.dp.toPx()
     
     // 描画する接続（MediaPipe準拠）
     // 11: 左肩, 12: 右肩, 13: 左肘, 14: 右肘, 15: 左手首, 16: 右手首
@@ -502,14 +496,15 @@ private fun DrawScope.drawMediaPipeSkeleton(
         24 to 26, 26 to 28  // 右脚
     )
 
-    // 線の描画（一時安定化：ロイヤルブルーと白）
+    // 線の描画（解析中は白、完了後に評価色）
     connections.forEach { (start, end) ->
         if (start < points.size && end < points.size) {
+            // 線の描画色の決定
             val lineColor = when {
-                // 肩ラインと腰ライン：ロイヤルブルー（強調）
-                (start == 11 && end == 12) || (start == 23 && end == 24) -> Color(0xFF4169E1) // ロイヤルブルー
-                // その他のライン：白
-                else -> Color(0xCCFFFFFF)
+                analysisResult == null -> androidx.compose.ui.graphics.Color.White // 解析前・解析中は白
+                analysisResult.score >= 80 -> androidx.compose.ui.graphics.Color(0xFF4CAF50) // 緑（適正）
+                analysisResult.score >= 60 -> androidx.compose.ui.graphics.Color(0xFFFF9800) // 黄（注意）
+                else -> androidx.compose.ui.graphics.Color(0xFFF44336) // 赤（不良）
             }
             
             drawLine(
@@ -521,14 +516,22 @@ private fun DrawScope.drawMediaPipeSkeleton(
         }
     }
 
-    // 関節点の描画（一時安定化：ロイヤルブルーと白）
+    // 関節点の描画（解析中は白、完了後に評価色）
     points.forEachIndexed { index, point ->
         if (index < points.size) {
-            val (jointColor, radius) = when (index) {
-                // 肩と腰：ロイヤルブルー（強調部）
-                11, 12, 23, 24 -> Color(0xFF4169E1) to jointRadius * 1.5f
-                // その他の関節：白
-                else -> Color(0xCCFFFFFF) to jointRadius
+            // 関節点の描画色の決定
+            val jointColor = when {
+                analysisResult == null -> androidx.compose.ui.graphics.Color.White // 解析前・解析中は白
+                analysisResult.score >= 80 -> androidx.compose.ui.graphics.Color(0xFF4CAF50) // 緑
+                analysisResult.score >= 60 -> androidx.compose.ui.graphics.Color(0xFFFF9800) // 黄
+                else -> androidx.compose.ui.graphics.Color(0xFFF44336) // 赤
+            }
+            
+            val radius = when (index) {
+                // 重要な関節（肩・腰など）：大きめ
+                11, 12, 23, 24 -> jointRadius * 1.5f
+                // その他の関節：通常サイズ
+                else -> jointRadius
             }
             
             drawCircle(color = jointColor, radius = radius, center = point)
