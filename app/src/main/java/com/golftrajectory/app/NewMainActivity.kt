@@ -135,6 +135,7 @@ class NewMainActivity : ComponentActivity() {
         
         // GeminiAIManager を初期化
         aiManager = GeminiAIManager(this)
+        aiManager.initialize()
         
         setContent {
             SwingTraceWithAICoachingTheme {

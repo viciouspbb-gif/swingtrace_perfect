@@ -26,7 +26,6 @@ class GeminiAIManager(private val context: Context) {
         
         if (!isApiKeyConfigured) {
             Log.e(TAG, "[GeminiAIManager] API Key is missing. AI features will be disabled. Set GEMINI_API_KEY in local.properties.")
-            // TODO: UI側に「APIキー未設定」のステータスを通知し、無限ループやクラッシュを防ぐ
             return
         }
         
