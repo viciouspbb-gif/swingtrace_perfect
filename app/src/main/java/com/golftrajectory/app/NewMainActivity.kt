@@ -246,7 +246,21 @@ class NewMainActivity : ComponentActivity() {
                                     }
                                 },
                                 onComparisonClick = { navController.navigate("comparison") },
-                                onHistoryClick = { navController.navigate("history") },
+                                onHistoryClick = {
+                                    if (isPremium) {
+                                        navController.navigate("history")
+                                    } else {
+                                        // Practiceユーザーには履歴機能を制限
+                                        scope.launch {
+                                            androidx.appcompat.app.AlertDialog.Builder(this@NewMainActivity)
+                                                .setTitle("機能制限")
+                                                .setMessage("履歴機能はアスリート版限定です")
+                                                .setPositiveButton("OK", null)
+                                                .setIcon(android.R.drawable.ic_lock_lock)
+                                                .show()
+                                        }
+                                    }
+                                },
                                 onPremiumClick = { navController.navigate("premium") },
                                 onSettingsClick = { navController.navigate("settings") },
                                 onLogout = {

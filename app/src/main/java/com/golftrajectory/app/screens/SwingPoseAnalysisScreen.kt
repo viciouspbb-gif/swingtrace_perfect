@@ -161,6 +161,15 @@ fun SwingPoseAnalysisScreen(
         onDispose {
             exoPlayer.release()
             poseDetector.close()
+            
+            // Practiceモードの場合は解析データをクリア（使い捨て化）
+            if (planTier == com.golftrajectory.app.plan.Plan.PRACTICE) {
+                analysisResult = null
+                allPoses = emptyList()
+                posePoints = emptyList()
+                biomechanicsData = null
+                Log.d("SwingPoseAnalysisScreen", "Practice mode data cleared on dispose")
+            }
         }
     }
 
@@ -318,6 +327,25 @@ fun SwingPoseAnalysisScreen(
                         allPoses = detectedPoses
                         posePoints = detectedPoses.first()
                         analysisResult = swingAnalyzer.analyze(detectedPoses)
+                        
+                        // Practiceモードの場合は保存処理をスキップ
+                        if (planTier != com.golftrajectory.app.plan.Plan.PRACTICE) {
+                            // TODO: SwingAnalysisRepositoryへの保存処理（Athlete/Proのみ）
+                            Log.d("SwingPoseAnalysisScreen", "Saving analysis result for ${planTier.name} tier")
+                        }
+                        
+                        // 動画ファイルをキャッシュから削除（Practiceモード）
+                        if (planTier == com.golftrajectory.app.plan.Plan.PRACTICE) {
+                            try {
+                                val videoFile = java.io.File(videoUri.path ?: "")
+                                if (videoFile.exists()) {
+                                    videoFile.delete()
+                                    Log.d("SwingPoseAnalysisScreen", "Video file deleted for Practice mode")
+                                }
+                            } catch (e: Exception) {
+                                Log.w("SwingPoseAnalysisScreen", "Failed to delete video file", e)
+                            }
+                        }
                     } else {
                         errorMessage = "姿勢を検出できませんでした"
                     }
