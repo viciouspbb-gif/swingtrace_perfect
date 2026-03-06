@@ -48,6 +48,9 @@ import android.graphics.Matrix
 import android.graphics.Rect
 import android.util.Log
 import android.widget.Toast
+import kotlin.math.pow
+import kotlin.math.sqrt
+import kotlin.math.abs
 
 /**
  * スイング姿勢分析画面（MediaPipe使用）- プロ仕様フルスクリーン版
@@ -179,7 +182,7 @@ fun SwingPoseAnalysisScreen(
         }
     }
 
-    // アスペクト比と距離の正規化（RESIZE_MODE_FIT対応）
+    // アスペクト比と距離の正規化（全画面表示対応）
     fun calculateVideoRect(canvasWidth: Float, canvasHeight: Float): Rect {
         val videoAspectRatio = videoWidth.toFloat() / videoHeight.toFloat()
         val canvasAspectRatio = canvasWidth / canvasHeight
@@ -189,14 +192,15 @@ fun SwingPoseAnalysisScreen(
         val offsetX: Float
         val offsetY: Float
         
-        if (videoAspectRatio > canvasAspectRatio) {
-            // 動画が横長 → 幅基準
+        // 横向き動画を全画面表示（黒帯なし）
+        if (videoAspectRatio >= canvasAspectRatio) {
+            // 動画が横長または同じ比率 → 幅基準で全画面
             rectWidth = canvasWidth
             rectHeight = canvasWidth / videoAspectRatio
             offsetX = 0f
             offsetY = (canvasHeight - rectHeight) / 2f
         } else {
-            // 動画が縦長 → 高さ基準
+            // 動画が縦長 → 高さ基準で全画面
             rectWidth = canvasHeight * videoAspectRatio
             rectHeight = canvasHeight
             offsetX = (canvasWidth - rectWidth) / 2f
@@ -324,11 +328,25 @@ fun SwingPoseAnalysisScreen(
 
                 withContext(Dispatchers.Main) {
                     if (detectedPoses.isNotEmpty()) {
+                        // 第4層【静止始動の確認】
+                        if (!hasStaticStart(detectedPoses)) {
+                            errorMessage = "スイング開始前に静止状態を確認してください"
+                            isAnalyzing = false
+                            return@withContext
+                        }
+                        
+                        // 第3層【アクション・バリデーション】
+                        if (!isValidGolfSwing(detectedPoses)) {
+                            errorMessage = "ゴルフスイングを検出できませんでした。正しいスイングを撮影してください。"
+                            isAnalyzing = false
+                            return@withContext
+                        }
+                        
                         allPoses = detectedPoses
                         posePoints = detectedPoses.first()
                         analysisResult = swingAnalyzer.analyze(detectedPoses)
                         
-                        // Practiceモードの場合は保存処理をスキップ
+                        // Practiceモードの場合は保存処理をスキップ（使い捨て化）
                         if (planTier != com.golftrajectory.app.plan.Plan.PRACTICE) {
                             // TODO: SwingAnalysisRepositoryへの保存処理（Athlete/Proのみ）
                             Log.d("SwingPoseAnalysisScreen", "Saving analysis result for ${planTier.name} tier")
@@ -512,13 +530,24 @@ fun SwingPoseAnalysisScreen(
     }
 }
 
-// MediaPipe（33点）専用のプロ仕様骨格描画ロジック（一時安定化版）
+// MediaPipe（33点）専用のプロ仕様骨格描画ロジック（ゴルフ・ノイズフィルター付き）
 private fun DrawScope.drawMediaPipeSkeleton(
     points: List<Offset>, 
     analysisResult: com.golftrajectory.app.SwingAnalysisResult?
 ) {
     val strokeWidth = 4.dp.toPx()
     val jointRadius = 6.dp.toPx()
+    
+    // 第1層【ポーズ信頼度チェック】
+    // ※実際の信頼度はPoseDetectorから渡す必要があるため、ここではポイント数で簡易判定
+    if (points.size < 33) {
+        return // 信頼度不足 - 描画中止
+    }
+    
+    // 第2層【ゴルフ・アドレス検知】
+    if (!isGolfAddressPose(points)) {
+        return // ゴルフ構えではない - 描画中止
+    }
     
     // 描画する接続（MediaPipe準拠）
     // 11: 左肩, 12: 右肩, 13: 左肘, 14: 右肘, 15: 左手首, 16: 右手首
@@ -581,5 +610,114 @@ private fun DrawScope.drawMediaPipeSkeleton(
                 drawCircle(color = Color.White, radius = jointRadius * 0.5f, center = point)
             }
         }
+    }
+}
+
+// 第2層【ゴルフ・アドレス検知】
+private fun isGolfAddressPose(points: List<Offset>): Boolean {
+    if (points.size < 33) return false
+    
+    try {
+        // 1. グリップ状態チェック：左右の手首（15, 16）の距離が一定値以下
+        val leftWrist = points[15]
+        val rightWrist = points[16]
+        val gripDistance = kotlin.math.sqrt(
+            ((leftWrist.x - rightWrist.x) * (leftWrist.x - rightWrist.x) + 
+            (leftWrist.y - rightWrist.y) * (leftWrist.y - rightWrist.y)).toDouble()
+        ).toFloat()
+        
+        // グリップ距離が0.1（正規化座標）以下であること
+        if (gripDistance > 0.15f) return false
+        
+        // 2. 前傾（Spine Angle）チェック：肩と腰を結ぶ線が垂直でないこと
+        val leftShoulder = points[11]
+        val rightShoulder = points[12]
+        val leftHip = points[23]
+        val rightHip = points[24]
+        
+        val shoulderCenter = Offset(
+            (leftShoulder.x + rightShoulder.x) / 2f,
+            (leftShoulder.y + rightShoulder.y) / 2f
+        )
+        val hipCenter = Offset(
+            (leftHip.x + rightHip.x) / 2f,
+            (leftHip.y + rightHip.y) / 2f
+        )
+        
+        // 肩と腰の垂直方向の差分（前傾角度の指標）
+        val spineAngle = abs(shoulderCenter.y - hipCenter.y)
+        // 前傾があること（肩が腰より上にある）
+        if (spineAngle < 0.05f) return false
+        
+        return true
+    } catch (e: Exception) {
+        return false
+    }
+}
+
+// 第3層【アクション・バリデーション】
+private fun isValidGolfSwing(allPoses: List<List<Offset>>): Boolean {
+    if (allPoses.isEmpty()) return false
+    
+    try {
+        var wristAboveShoulder = false
+        
+        for (pose in allPoses) {
+            if (pose.size >= 33) {
+                val leftWrist = pose[15]
+                val rightWrist = pose[16]
+                val leftShoulder = pose[11]
+                val rightShoulder = pose[12]
+                
+                // いずれかの手首が肩の高さを超えたかチェック
+                if (leftWrist.y < leftShoulder.y || rightWrist.y < rightShoulder.y) {
+                    wristAboveShoulder = true
+                    break
+                }
+            }
+        }
+        
+        return wristAboveShoulder // 手首が肩を超えない場合はスイングではない
+    } catch (e: Exception) {
+        return false
+    }
+}
+
+// 第4層【静止始動の確認】
+private fun hasStaticStart(allPoses: List<List<Offset>>): Boolean {
+    if (allPoses.size < 5) return false // 最初の5フレームをチェック
+    
+    try {
+        val threshold = 0.02f // 移動速度閾値
+        
+        for (i in 1 until kotlin.math.min(5, allPoses.size)) {
+            val prevPose = allPoses[i - 1]
+            val currPose = allPoses[i]
+            
+            if (prevPose.size >= 33 && currPose.size >= 33) {
+                // 主要関節の移動距離を計算
+                var totalMovement = 0f
+                val keyJoints = listOf(11, 12, 15, 16, 23, 24) // 肩、手首、腰
+                
+                for (jointIndex in keyJoints) {
+                    val prevPoint = prevPose[jointIndex]
+                    val currPoint = currPose[jointIndex]
+                    val distance = kotlin.math.sqrt(
+                        ((currPoint.x - prevPoint.x) * (currPoint.x - prevPoint.x) + 
+                        (currPoint.y - prevPoint.y) * (currPoint.y - prevPoint.y)).toDouble()
+                    ).toFloat()
+                    totalMovement += distance
+                }
+                
+                // 移動が閾値を超えた場合は静止状態ではない
+                if (totalMovement > threshold) {
+                    return false
+                }
+            }
+        }
+        
+        return true // 最初の数フレームは静止状態だった
+    } catch (e: Exception) {
+        return false
     }
 }
