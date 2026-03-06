@@ -21,13 +21,16 @@ class GeminiAIManager(private val context: Context) {
         get() = BuildConfig.GEMINI_API_KEY.isNotEmpty() && BuildConfig.GEMINI_API_KEY != "YOUR_API_KEY"
 
     fun initialize() {
+        Log.d(TAG, "[GeminiAIManager] Initializing...")
+        Log.d(TAG, "[GeminiAIManager] API Key from BuildConfig: ${BuildConfig.GEMINI_API_KEY.take(10)}...")
+        
         if (!isApiKeyConfigured) {
             Log.e(TAG, "[GeminiAIManager] API Key is missing. AI features will be disabled. Set GEMINI_API_KEY in local.properties.")
             // TODO: UI側に「APIキー未設定」のステータスを通知し、無限ループやクラッシュを防ぐ
             return
         }
         
-        Log.i(TAG, "[GeminiAIManager] API Key loaded successfully. Initializing GenerativeModel...")
+        Log.i(TAG, "[GeminiAIManager] Gemini AI 通信成功。スイングデータの解析準備完了")
         // 既存の GenerativeModel 初期化処理をここに続ける
     }
 
