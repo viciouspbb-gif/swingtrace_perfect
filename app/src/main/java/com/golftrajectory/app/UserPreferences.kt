@@ -25,6 +25,7 @@ class UserPreferences(context: Context) {
         private const val KEY_ANALYSIS_COUNT = "analysis_count"
         private const val KEY_COACHING_STYLE = "coaching_style"
         private const val KEY_TARGET_PRO = "target_pro"
+        private const val KEY_HAS_SEEN_CAMERA_TUTORIAL = "has_seen_camera_tutorial"
         
         const val HAND_RIGHT = "right"
         const val HAND_LEFT = "left"
@@ -244,6 +245,22 @@ class UserPreferences(context: Context) {
      */
     fun getTargetPro(): String? {
         return prefs.getString(KEY_TARGET_PRO, null)
+    }
+    
+    // ========== カメラチュートリアル設定 ==========
+    
+    /**
+     * カメラチュートリアルを既読かどうかを設定
+     */
+    fun setHasSeenCameraTutorial(hasSeen: Boolean) {
+        prefs.edit().putBoolean(KEY_HAS_SEEN_CAMERA_TUTORIAL, hasSeen).apply()
+    }
+    
+    /**
+     * カメラチュートリアルを既読かどうかを取得
+     */
+    fun hasSeenCameraTutorial(): Boolean {
+        return prefs.getBoolean(KEY_HAS_SEEN_CAMERA_TUTORIAL, false)
     }
 }
 

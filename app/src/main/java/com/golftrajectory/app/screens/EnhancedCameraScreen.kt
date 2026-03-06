@@ -48,7 +48,7 @@ import java.util.*
 @Composable
 fun EnhancedCameraScreen(
     onVideoRecorded: (Uri) -> Unit,
-    onAutoAnalysisStart: (Uri) -> Unit = {},
+    userPreferences: com.golftrajectory.app.UserPreferences,
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
@@ -56,18 +56,17 @@ fun EnhancedCameraScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
     
-    // 動的オリエンテーション・ロック（開いた時だけ横画面、閉じたら元に戻す）
+    // 強制横向きロック（一本道仕様）
     DisposableEffect(Unit) {
-        val originalOrientation = activity?.requestedOrientation ?: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
         onDispose {
-            activity?.requestedOrientation = originalOrientation
+            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         }
     }
     
-    // 現在の向きを検出
-    val configuration = LocalConfiguration.current
-    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+    // 初回チュートリアル表示制御
+    var showTutorial by remember { mutableStateOf(!userPreferences.hasSeenCameraTutorial()) }
+    var dontShowAgain by remember { mutableStateOf(false) }
     
     var isRecording by remember { mutableStateOf(false) }
     var recordingState by remember { mutableStateOf<Recording?>(null) }
@@ -86,14 +85,61 @@ fun EnhancedCameraScreen(
         }
     }
     
-    // カメラプレビュー
+    // カメラプレビューの初期化（エラー耐性強化）
     val previewView = remember { PreviewView(context) }
     
     LaunchedEffect(Unit) {
-        val cameraProvider = ProcessCameraProvider.getInstance(context).get()
-        setupCamera(cameraProvider, previewView, lifecycleOwner) { capture ->
-            videoCapture = capture
+        try {
+            val cameraProvider = ProcessCameraProvider.getInstance(context).get()
+            setupCamera(cameraProvider, previewView, lifecycleOwner) { capture ->
+                videoCapture = capture
+            }
+        } catch (e: Exception) {
+            Toast.makeText(context, "カメラの初期化に失敗しました: ${e.message}", Toast.LENGTH_LONG).show()
         }
+    }
+    
+    // チュートリアルダイアログ（初回のみ）
+    if (showTutorial) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { /* 閉じない */ },
+            title = {
+                Text("撮影チュートリアル")
+            },
+            text = {
+                Column {
+                    Text("高精度分析のため横向き撮影を行ってください。")
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("• スマホを横にして構える")
+                    Text("• スイング全体が収まるように撮影")
+                    Text("• 録画ボタンを押して開始")
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Checkbox(
+                            checked = dontShowAgain,
+                            onCheckedChange = { dontShowAgain = it }
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("今後表示しない")
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        if (dontShowAgain) {
+                            userPreferences.setHasSeenCameraTutorial(true)
+                        }
+                        showTutorial = false
+                    }
+                ) {
+                    Text("OK")
+                }
+            }
+        )
     }
     
     Box(modifier = Modifier.fillMaxSize()) {
@@ -123,41 +169,6 @@ fun EnhancedCameraScreen(
                 color = Color.White.copy(alpha = 0.9f)
             )
         }
-        
-        // 横向きガイド（非横向きの場合）
-            if (!isLandscape) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.8f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(32.dp),
-                        colors = CardDefaults.cardColors(containerColor = Color.White)
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(24.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Text(
-                                text = "横にしてください",
-                                fontSize = 24.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.Red
-                            )
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Text(
-                                text = "スイング分析は横向きで撮影してください。\nスマホを横にしてから録画を開始できます。",
-                                fontSize = 16.sp,
-                                color = Color.Black
-                            )
-                        }
-                    }
-                }
-            }
             
             // 録画中インジケーター
         if (isRecording) {
@@ -192,11 +203,9 @@ fun EnhancedCameraScreen(
                 .padding(bottom = 120.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // 録画ボタン（横向きの場合のみ有効）
+            // 録画ボタン（一本道仕様 - 常に有効）
             FloatingActionButton(
                 onClick = {
-                    if (!isLandscape) return@FloatingActionButton // 横向きでなければ無効
-                    
                     if (isRecording) {
                         // 録画停止
                         recordingState?.stop()
@@ -212,16 +221,14 @@ fun EnhancedCameraScreen(
                             },
                             onVideoSaved = { uri ->
                                 recordedVideoUri = uri
-                                // 自動保存＆即時解析開始
+                                // 録画完了後、即時に解析画面へ遷移
                                 onVideoRecorded(uri)
-                                // 録画完了後、自動的に解析画面へ遷移して解析開始
-                                onAutoAnalysisStart(uri)
                             }
                         )
                     }
                 },
                 modifier = Modifier.size(80.dp),
-                containerColor = if (!isLandscape) Color.Gray else if (isRecording) Color.Red else MaterialTheme.colorScheme.primary
+                containerColor = if (isRecording) Color.Red else MaterialTheme.colorScheme.primary
             ) {
                 Icon(
                     imageVector = if (isRecording) Icons.Default.Stop else Icons.Default.FiberManualRecord,

@@ -570,14 +570,10 @@ class NewMainActivity : ComponentActivity() {
                             EnhancedCameraScreen(
                                 onVideoRecorded = { uri ->
                                     currentVideoUri = uri
-                                    // 直接バイオメカニクス解析画面へ遷移（オンデバイス処理）
+                                    // 直接バイオメカニクス解析画面へ遷移（一本道仕様）
                                     navController.navigate("poseAnalysis?videoUri=${uri}")
                                 },
-                                onAutoAnalysisStart = { uri ->
-                                    currentVideoUri = uri
-                                    // 自動で解析画面へ遷移
-                                    navController.navigate("swingAnalysis")
-                                },
+                                userPreferences = userPreferences,
                                 onBack = {
                                     navController.popBackStack()
                                 }
