@@ -57,6 +57,8 @@ fun SwingPoseAnalysisScreen(
     videoUri: Uri,
     analysisMode: String = "rear",
     planTier: Plan,
+    aiManager: com.golftrajectory.app.ai.GeminiAIManager? = null,
+    userPreferences: com.golftrajectory.app.UserPreferences? = null,
     autoStart: Boolean = false,
     onBack: () -> Unit,
     onAICoachClick: (com.golftrajectory.app.SwingAnalysisResult) -> Unit = {}

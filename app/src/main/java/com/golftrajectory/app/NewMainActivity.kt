@@ -239,7 +239,8 @@ class NewMainActivity : ComponentActivity() {
                                 },
                                 onAICoachClick = { 
                                     if (isPremium) {
-                                        navController.navigate("aiCoach")
+                                        // TODO: Show AI Coach Overlay within Analysis Screen
+                                        // navController.navigate("aiCoach") - DEPRECATED
                                     } else {
                                         navController.navigate("premium")
                                     }
@@ -357,8 +358,8 @@ class NewMainActivity : ComponentActivity() {
                                         
                                         previousScore = null // 履歴の前回スコアは不明
                                         
-                                        // AIコーチ画面に遷移
-                                        navController.navigate("aiCoach")
+                                        // TODO: Show AI Coach Overlay within Analysis Screen
+                                        // navController.navigate("aiCoach") - DEPRECATED
                                         
                                     } catch (e: Exception) {
                                         android.widget.Toast.makeText(
@@ -427,6 +428,7 @@ class NewMainActivity : ComponentActivity() {
                         }
                         
                         // AIコーチング画面（プレミアム版のみ）
+                        // DEPRECATED: To be integrated into Analysis Screen
                         composable("aiCoach") {
                             AICoachingScreen(
                                 aiManager = aiManager,
@@ -485,7 +487,8 @@ class NewMainActivity : ComponentActivity() {
                                             currentProSimilarity = similarities.firstOrNull()
                                             previousScore = past.totalScore
                                             
-                                            navController.navigate("aiCoach")
+                                            // TODO: Show AI Coach Overlay within Analysis Screen
+                                            // navController.navigate("aiCoach") - DEPRECATED
                                         }
                                     )
                                 } else {
@@ -613,12 +616,14 @@ class NewMainActivity : ComponentActivity() {
                                     videoUri = videoUri,
                                     analysisMode = "rear",
                                     planTier = planTier,
+                                    aiManager = aiManager,
+                                    userPreferences = userPreferences,
                                     onBack = {
                                         navController.popBackStack()
                                     },
                                     onAICoachClick = { result ->
-                                        // AIコーチ画面へ遷移（結果を渡す）
-                                        navController.navigate("aiCoach")
+                                        // TODO: Show AI Coach Overlay within Analysis Screen
+                                        // navController.navigate("aiCoach") - DEPRECATED
                                     }
                                 )
                             }
@@ -631,6 +636,8 @@ class NewMainActivity : ComponentActivity() {
                                     videoUri = currentVideoUri!!,
                                     analysisMode = "rear",
                                     planTier = planTier,
+                                    aiManager = aiManager,
+                                    userPreferences = userPreferences,
                                     onBack = {
                                         navController.popBackStack("home", inclusive = false)
                                     },
@@ -666,7 +673,8 @@ class NewMainActivity : ComponentActivity() {
                                             previousScore = historyList.getOrNull(1)?.totalScore
                                         }
                                         
-                                        navController.navigate("aiCoach")
+                                        // TODO: Show AI Coach Overlay within Analysis Screen
+                                        // navController.navigate("aiCoach") - DEPRECATED
                                     }
                                 )
                             }
@@ -679,6 +687,8 @@ class NewMainActivity : ComponentActivity() {
                                     videoUri = currentVideoUri!!,
                                     analysisMode = "front",
                                     planTier = planTier,
+                                    aiManager = aiManager,
+                                    userPreferences = userPreferences,
                                     onBack = {
                                         navController.popBackStack("home", inclusive = false)
                                     },
@@ -714,7 +724,8 @@ class NewMainActivity : ComponentActivity() {
                                             previousScore = historyList.getOrNull(1)?.totalScore
                                         }
                                         
-                                        navController.navigate("aiCoach")
+                                        // TODO: Show AI Coach Overlay within Analysis Screen
+                                        // navController.navigate("aiCoach") - DEPRECATED
                                     }
                                 )
                             }
