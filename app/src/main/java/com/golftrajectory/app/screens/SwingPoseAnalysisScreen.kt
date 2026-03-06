@@ -269,8 +269,8 @@ fun SwingPoseAnalysisScreen(
                             val rawBitmap = retriever.getFrameAtTime(currentTime, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
                             rawBitmap?.let { bmp ->
                                 try {
-                                    // 画像が横長（width > height）で、かつ回転メタデータがある場合のみ回転させる（二重回転の防止）
-                                    val shouldRotate = (videoRotation == 90 || videoRotation == 270) && (bmp.width > bmp.height)
+                                    // Bitmap回転処理の簡略化：videoRotationが0以外かつBitmapが横長なら無条件回転
+                                    val shouldRotate = videoRotation != 0 && bmp.width > bmp.height
                                     val rotatedBitmap = if (shouldRotate) {
                                         val matrix = android.graphics.Matrix().apply { postRotate(videoRotation.toFloat()) }
                                         android.graphics.Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, matrix, true)
@@ -375,30 +375,40 @@ fun SwingPoseAnalysisScreen(
             }
         }
 
-        // 3. 骨格描画（完璧な数学的座標マッピング）
+        // 3. 骨格描画（絶対座標・完全同期コード）
         if (posePoints.isNotEmpty()) {
             Canvas(modifier = Modifier.fillMaxSize()) {
-                // 1. 画面（Canvas）のサイズ
+                if (posePoints.isEmpty() || analyzedFrameWidth <= 0f) return@Canvas
+                
                 val canvasWidth = size.width
                 val canvasHeight = size.height
 
-                // 2. FITモードにおけるスケール値（AIが見た実際の画像サイズを基準にする）
-                val scale = minOf(canvasWidth / analyzedFrameWidth, canvasHeight / analyzedFrameHeight)
+                // 映像のアスペクト比を、Stateから直接計算（メタデータは信用しない）
+                val videoAspect = analyzedFrameWidth / analyzedFrameHeight
+                val canvasAspect = canvasWidth / canvasHeight
 
-                // 3. 画面上での「実際の映像の描画サイズ」と「余白（黒帯）のオフセット」
-                val drawWidth = analyzedFrameWidth * scale
-                val drawHeight = analyzedFrameHeight * scale
+                // FITモード（黒帯あり）の描画領域を算出
+                val drawWidth: Float
+                val drawHeight: Float
+                if (canvasAspect > videoAspect) {
+                    // 画面が横長すぎる（左右に黒帯）
+                    drawHeight = canvasHeight
+                    drawWidth = canvasHeight * videoAspect
+                } else {
+                    // 画面が縦長すぎる（上下に黒帯）
+                    drawWidth = canvasWidth
+                    drawHeight = canvasWidth / videoAspect
+                }
+
                 val offsetX = (canvasWidth - drawWidth) / 2f
                 val offsetY = (canvasHeight - drawHeight) / 2f
 
-                // 4. MediaPipe座標（0.0〜1.0）の絶対マッピング
                 val scaledPoints = posePoints.map { point ->
                     androidx.compose.ui.geometry.Offset(
                         x = offsetX + (point.x * drawWidth),
                         y = offsetY + (point.y * drawHeight)
                     )
                 }
-
                 drawMediaPipeSkeleton(scaledPoints, analysisResult)
             }
         }
