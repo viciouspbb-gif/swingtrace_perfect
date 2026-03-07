@@ -22,6 +22,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -140,6 +141,7 @@ fun SwingPoseAnalysisScreen(
     var analysisResult by remember { mutableStateOf<com.golftrajectory.app.SwingAnalysisResult?>(null) }
     val swingAnalyzer = remember { com.golftrajectory.app.PoseSwingAnalyzer() }
     val isLitePlan = planTier == Plan.PRACTICE
+    var showAnalysisDialog by remember { mutableStateOf(false) }
 
     // 解析完了後の自動再生フック
     LaunchedEffect(analysisResult) {
@@ -510,25 +512,112 @@ fun SwingPoseAnalysisScreen(
             modifier = Modifier
                 .align(Alignment.TopStart)
                 .padding(16.dp)
-                .background(Color.Black.copy(alpha = 0.4f), CircleShape)
-        ) {
-            Icon(Icons.Default.ArrowBack, contentDescription = "戻る", tint = Color.White)
-        }
 
         // 8. オーバーレイ：AIコーチボタン（右下・解析完了後のみ）
         if (analysisResult != null && !isAnalyzing) {
             FloatingActionButton(
-                onClick = { onAICoachClick(analysisResult!!) },
+                onClick = { showAnalysisDialog = true },
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .padding(24.dp),
                 containerColor = Color(0xFF2196F3)
             ) {
-                Icon(Icons.Default.Info, contentDescription = "AIコーチ", tint = Color.White)
+                Icon(Icons.Default.Info, contentDescription = "分析詳細", tint = Color.White)
+            }
+        }
+
+        // 9. 分析ダイアログオーバーレイ
+        if (showAnalysisDialog) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.8f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth(0.9f)
+                        .padding(16.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = Color.White
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier.padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "スイング分析詳細",
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.Black
+                        )
+                        
+                        Spacer(modifier = Modifier.height(16.dp))
+                        
+                        // プランによる表示項目制御
+                        if (isLitePlan) {
+                            // Practice版：基礎3点のみ
+                            Text(
+                                text = " プレミアム機能",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF2196F3)
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "詳細なバイオメカニクス分析は\nアスリート版・プロ版でご利用いただけます",
+                                fontSize = 14.sp,
+                                textAlign = TextAlign.Center,
+                                color = Color.Gray
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            
+                            // 基礎3項目のみ表示
+                            AnalysisItem("スイングスコア", "${analysisResult?.score ?: 0}点")
+                            AnalysisItem("姿勢評価", getPostureEvaluation(analysisResult?.score ?: 0))
+                            AnalysisItem("改善アドバイス", "プレミアム版で表示")
+                        } else {
+                            // アスリート版・プロ版：6項目すべて表示
+                            AnalysisItem("肩の回転角", "${getShoulderRotation(posePoints)}°")
+                            AnalysisItem("腰の回転角", "${getHipRotation(posePoints)}°")
+                            AnalysisItem("X-Factor", "${getXFactor(posePoints)}°")
+                            AnalysisItem("頭の移動量", "${getHeadMovement(allPoses)}cm")
+                            AnalysisItem("体重移動", "${getWeightShift(allPoses)}cm")
+                            AnalysisItem("シャフトレイン", "${getShaftLean(posePoints)}°")
+                        }
+                        
+                        Spacer(modifier = Modifier.height(24.dp))
+                        
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            TextButton(
+                                onClick = { showAnalysisDialog = false },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text("閉じる", color = Color.Gray)
+                            }
+                            
+                            if (!isLitePlan) {
+                                Button(
+                                    onClick = { 
+                                        showAnalysisDialog = false
+                                        onAICoachClick(analysisResult!!)
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2196F3))
+                                ) {
+                                    Text("AIコーチ", color = Color.White)
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
-}
 
 // MediaPipe（33点）専用のプロ仕様骨格描画ロジック（ゴルフ・ノイズフィルター付き）
 private fun DrawScope.drawMediaPipeSkeleton(
@@ -719,5 +808,161 @@ private fun hasStaticStart(allPoses: List<List<Offset>>): Boolean {
         return true // 最初の数フレームは静止状態だった
     } catch (e: Exception) {
         return false
+    }
+}
+
+// 分析項目表示用コンポーザブル
+@Composable
+private fun AnalysisItem(label: String, value: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Medium,
+            color = Color.Black
+        )
+        Text(
+            text = value,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color(0xFF2196F3)
+        )
+    }
+}
+
+// 姿勢評価を取得
+private fun getPostureEvaluation(score: Int): String {
+    return when {
+        score >= 80 -> "優秀"
+        score >= 60 -> "良好"
+        score >= 40 -> "要改善"
+        else -> "再確認"
+    }
+}
+
+// 肩の回転角を計算
+private fun getShoulderRotation(points: List<Offset>): Double {
+    if (points.size < 33) return 0.0
+    try {
+        val leftShoulder = points[11]
+        val rightShoulder = points[12]
+        val shoulderAngle = kotlin.math.atan2(
+            rightShoulder.y - leftShoulder.y,
+            rightShoulder.x - leftShoulder.x
+        ) * 180 / kotlin.math.PI
+        return kotlin.math.abs(shoulderAngle)
+    } catch (e: Exception) {
+        return 0.0
+    }
+}
+
+// 腰の回転角を計算
+private fun getHipRotation(points: List<Offset>): Double {
+    if (points.size < 33) return 0.0
+    try {
+        val leftHip = points[23]
+        val rightHip = points[24]
+        val hipAngle = kotlin.math.atan2(
+            rightHip.y - leftHip.y,
+            rightHip.x - leftHip.x
+        ) * 180 / kotlin.math.PI
+        return kotlin.math.abs(hipAngle)
+    } catch (e: Exception) {
+        return 0.0
+    }
+}
+
+// X-Factor（肩角-腰角の差分）を計算
+private fun getXFactor(points: List<Offset>): Double {
+    val shoulderRotation = getShoulderRotation(points)
+    val hipRotation = getHipRotation(points)
+    return kotlin.math.abs(shoulderRotation - hipRotation)
+}
+
+// 頭の移動量を計算
+private fun getHeadMovement(allPoses: List<List<Offset>>): Double {
+    if (allPoses.isEmpty() || allPoses.first().size < 33) return 0.0
+    try {
+        val firstPose = allPoses.first()
+        val lastPose = allPoses.last()
+        
+        // MediaPipeの鼻のインデックスは0
+        val firstNose = firstPose[0]
+        val lastNose = lastPose[0]
+        
+        val movement = kotlin.math.sqrt(
+            ((lastNose.x - firstNose.x) * (lastNose.x - firstNose.x) + 
+            (lastNose.y - firstNose.y) * (lastNose.y - firstNose.y)).toDouble()
+        )
+        
+        // 正規化座標をcmに変換（仮定：1.0 = 50cm）
+        return movement * 50
+    } catch (e: Exception) {
+        return 0.0
+    }
+}
+
+// 体重移動を計算
+private fun getWeightShift(allPoses: List<List<Offset>>): Double {
+    if (allPoses.isEmpty() || allPoses.first().size < 33) return 0.0
+    try {
+        val firstPose = allPoses.first()
+        val lastPose = allPoses.last()
+        
+        // 両足の中点を計算
+        val firstLeftAnkle = firstPose[27]
+        val firstRightAnkle = firstPose[28]
+        val firstCenter = Offset(
+            (firstLeftAnkle.x + firstRightAnkle.x) / 2f,
+            (firstLeftAnkle.y + firstRightAnkle.y) / 2f
+        )
+        
+        val lastLeftAnkle = lastPose[27]
+        val lastRightAnkle = lastPose[28]
+        val lastCenter = Offset(
+            (lastLeftAnkle.x + lastRightAnkle.x) / 2f,
+            (lastLeftAnkle.y + lastRightAnkle.y) / 2f
+        )
+        
+        val shift = kotlin.math.sqrt(
+            ((lastCenter.x - firstCenter.x) * (lastCenter.x - firstCenter.x) + 
+            (lastCenter.y - firstCenter.y) * (lastCenter.y - firstCenter.y)).toDouble()
+        )
+        
+        // 正規化座標をcmに変換（仮定：1.0 = 50cm）
+        return shift * 50
+    } catch (e: Exception) {
+        return 0.0
+    }
+}
+
+// シャフトレインを計算
+private fun getShaftLean(points: List<Offset>): Double {
+    if (points.size < 33) return 0.0
+    try {
+        val leftWrist = points[15]
+        val rightWrist = points[16]
+        val wristCenter = Offset(
+            (leftWrist.x + rightWrist.x) / 2f,
+            (leftWrist.y + rightWrist.y) / 2f
+        )
+        
+        // クラブヘッドの仮定位置（手首より少し下）
+        val clubHead = Offset(wristCenter.x, wristCenter.y + 0.1f)
+        
+        val shaftAngle = kotlin.math.atan2(
+            clubHead.y - wristCenter.y,
+            clubHead.x - wristCenter.x
+        ) * 180 / kotlin.math.PI
+        
+        return kotlin.math.abs(shaftAngle)
+    } catch (e: Exception) {
+        return 0.0
     }
 }

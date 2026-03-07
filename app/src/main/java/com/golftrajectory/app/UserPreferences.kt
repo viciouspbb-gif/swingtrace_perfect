@@ -2,6 +2,8 @@ package com.golftrajectory.app
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 
 /**
  * ユーザー設定を管理するクラス
@@ -12,6 +14,8 @@ class UserPreferences(context: Context) {
         "swing_trace_prefs",
         Context.MODE_PRIVATE
     )
+    
+    private val gson = Gson()
     
     companion object {
         private const val KEY_HAND_PREFERENCE = "hand_preference"
@@ -26,6 +30,12 @@ class UserPreferences(context: Context) {
         private const val KEY_COACHING_STYLE = "coaching_style"
         private const val KEY_TARGET_PRO = "target_pro"
         private const val KEY_HAS_SEEN_CAMERA_TUTORIAL = "has_seen_camera_tutorial"
+        
+        // My Bag関連
+        private const val KEY_CLUB_SETTINGS = "club_settings"
+        private const val KEY_CURRENT_CLUB_SET = "current_club_set"
+        private const val KEY_PREFERRED_SHAFT_FLEX = "preferred_shaft_flex"
+        private const val KEY_SWING_SPEED = "swing_speed"
         
         const val HAND_RIGHT = "right"
         const val HAND_LEFT = "left"
@@ -261,6 +271,168 @@ class UserPreferences(context: Context) {
      */
     fun hasSeenCameraTutorial(): Boolean {
         return prefs.getBoolean(KEY_HAS_SEEN_CAMERA_TUTORIAL, false)
+    }
+    
+    // ========== My Bag（クラブ設定）管理 ==========
+    
+    /**
+     * クラブ設定リストを保存
+     */
+    fun saveClubSettings(clubSettings: List<UserClubSetting>) {
+        val json = gson.toJson(clubSettings)
+        prefs.edit().putString(KEY_CLUB_SETTINGS, json).apply()
+    }
+    
+    /**
+     * クラブ設定リストを取得
+     */
+    fun getClubSettings(): List<UserClubSetting> {
+        val json = prefs.getString(KEY_CLUB_SETTINGS, null)
+        return if (json != null) {
+            val type = object : TypeToken<List<UserClubSetting>>() {}.type
+            gson.fromJson(json, type) ?: emptyList()
+        } else {
+            // 初回起動時はデフォルトセットを生成して保存
+            val defaultSet = DefaultClubSetFactory.createStandardSet()
+            saveClubSettings(defaultSet)
+            defaultSet
+        }
+    }
+    
+    /**
+     * 特定のクラブ設定を取得
+     */
+    fun getClubSetting(clubId: String): UserClubSetting? {
+        val clubSettings = getClubSettings()
+        return ClubSetUtils.findClubById(clubId, clubSettings)
+    }
+    
+    /**
+     * クラブ設定を更新または追加
+     */
+    fun updateClubSetting(clubSetting: UserClubSetting) {
+        val clubSettings = getClubSettings().toMutableList()
+        val existingIndex = clubSettings.indexOfFirst { it.clubId == clubSetting.clubId }
+        
+        if (existingIndex >= 0) {
+            clubSettings[existingIndex] = clubSetting
+        } else {
+            clubSettings.add(clubSetting)
+        }
+        
+        saveClubSettings(clubSettings)
+    }
+    
+    /**
+     * クラブ設定を削除
+     */
+    fun deleteClubSetting(clubId: String) {
+        val clubSettings = getClubSettings().toMutableList()
+        clubSettings.removeAll { it.clubId == clubId }
+        saveClubSettings(clubSettings)
+    }
+    
+    /**
+     * 現在のクラブセット名を保存
+     */
+    fun saveCurrentClubSet(setName: String) {
+        prefs.edit().putString(KEY_CURRENT_CLUB_SET, setName).apply()
+    }
+    
+    /**
+     * 現在のクラブセット名を取得
+     */
+    fun getCurrentClubSet(): String {
+        return prefs.getString(KEY_CURRENT_CLUB_SET, "デフォルトセット") ?: "デフォルトセット"
+    }
+    
+    /**
+     * 好みのシャフトフレックスを保存
+     */
+    fun savePreferredShaftFlex(shaftFlex: String) {
+        prefs.edit().putString(KEY_PREFERRED_SHAFT_FLEX, shaftFlex).apply()
+    }
+    
+    /**
+     * 好みのシャフトフレックスを取得
+     */
+    fun getPreferredShaftFlex(): String {
+        return prefs.getString(KEY_PREFERRED_SHAFT_FLEX, "S") ?: "S"
+    }
+    
+    /**
+     * スイング速度を保存（mph）
+     */
+    fun saveSwingSpeed(swingSpeed: Double) {
+        prefs.edit().putFloat(KEY_SWING_SPEED, swingSpeed.toFloat()).apply()
+    }
+    
+    /**
+     * スイング速度を取得（mph）
+     */
+    fun getSwingSpeed(): Double {
+        return prefs.getFloat(KEY_SWING_SPEED, 95.0f).toDouble()
+    }
+    
+    /**
+     * ドライバーを取得
+     */
+    fun getDriver(): UserClubSetting? {
+        return ClubSetUtils.getDriver(getClubSettings())
+    }
+    
+    /**
+     * パターを取得
+     */
+    fun getPutter(): UserClubSetting? {
+        return ClubSetUtils.getPutter(getClubSettings())
+    }
+    
+    /**
+     * アイアンセットを取得
+     */
+    fun getIronSet(): List<UserClubSetting> {
+        return ClubSetUtils.getIronSet(getClubSettings())
+    }
+    
+    /**
+     * ウェッジを取得
+     */
+    fun getWedges(): List<UserClubSetting> {
+        return ClubSetUtils.getWedges(getClubSettings())
+    }
+    
+    /**
+     * 木製クラブを取得
+     */
+    fun getWoods(): List<UserClubSetting> {
+        return ClubSetUtils.getWoods(getClubSettings())
+    }
+    
+    /**
+     * クラブ設定をリセット（デフォルトセットに戻す）
+     */
+    fun resetClubSettings() {
+        val defaultSet = DefaultClubSetFactory.createStandardSet()
+        saveClubSettings(defaultSet)
+        saveCurrentClubSet("デフォルトセット")
+    }
+    
+    /**
+     * プレミアムクラブセットにアップグレード
+     */
+    fun upgradeToPremiumSet() {
+        val premiumSet = DefaultClubSetFactory.createPremiumSet()
+        saveClubSettings(premiumSet)
+        saveCurrentClubSet("プレミアムセット")
+    }
+    
+    /**
+     * スイング速度に基づいてシャフトフレックスを推奨
+     */
+    fun getRecommendedShaftFlex(): String {
+        val swingSpeed = getSwingSpeed()
+        return ClubSetUtils.recommendShaftFlex(swingSpeed).displayName
     }
 }
 
