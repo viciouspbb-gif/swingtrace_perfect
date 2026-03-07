@@ -7,8 +7,9 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
+import androidx.compose.material3.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -26,7 +27,8 @@ import com.swingtrace.aicoaching.screens.AuthScreen
 import com.swingtrace.aicoaching.screens.AutoTrajectoryScreen
 import com.swingtrace.aicoaching.screens.EnhancedCameraScreen
 import com.swingtrace.aicoaching.screens.HistoryScreen
-import com.golftrajectory.app.screens.ModernTopScreen
+import com.golftrajectory.app.screens.MainActionHubScreen
+import com.golftrajectory.app.screens.MyBagScreen
 import com.golftrajectory.app.screens.SettingsScreen
 import com.swingtrace.aicoaching.screens.SimpleMainScreen
 import com.swingtrace.aicoaching.screens.SimpleMainScreenWithLogout
@@ -149,6 +151,9 @@ class NewMainActivity : ComponentActivity() {
                 var isLoggedIn by remember { mutableStateOf(userPreferences.isLoggedIn()) }
                 var isGuest by remember { mutableStateOf(userPreferences.isGuest()) }
                 
+                // UI状態
+                var isMenuExpanded by remember { mutableStateOf(false) }
+                
                 // スイング分析データ（AIコーチに渡す用）
                 var currentSwingData by remember { mutableStateOf<com.swingtrace.aicoaching.domain.usecase.SwingData?>(null) }
                 var currentProSimilarity by remember { mutableStateOf<com.swingtrace.aicoaching.analysis.ProSimilarityCalculator.SimilarityResult?>(null) }
@@ -201,209 +206,42 @@ class NewMainActivity : ComponentActivity() {
                             )
                         }
                         
-                        // ホーム画面（モダンデザイン）
+                        // ホーム画面（一本化されたエントリポイント）
                         composable("home") {
-                            ModernTopScreen(
+                            MainActionHubScreen(
+                                navController = navController,
                                 userName = userPreferences.getUserName() ?: "Guest",
-                                latestScore = null,
-                                planTier = planTier,
-                                userPlanManager = userPlanManager,
+                                onVideoSelected = { uri ->
+                                    currentVideoUri = uri
+                                    navController.navigate("swing_analysis")
+                                },
                                 onCameraClick = {
                                     navController.navigate("camera")
-                                },
-                                onSmartAIAnalysisClick = {
-                                    navController.navigate("smart_ai")
-                                },
-                                onRearSwingClick = {
-                                    // 後方スイング分析
-                                    onVideoSelected = { uri ->
-                                        currentVideoUri = uri
-                                        navController.navigate("rearSwing")
-                                    }
-                                    videoPickerLauncher.launch("video/*")
-                                },
-                                onFrontSwingClick = {
-                                    // 正面スイング分析
-                                    if (isPremium) {
-                                        onVideoSelected = { uri ->
-                                            currentVideoUri = uri
-                                            navController.navigate("frontSwing")
-                                        }
-                                        videoPickerLauncher.launch("video/*")
-                                    } else {
-                                        navController.navigate("premium")
-                                    }
-                                },
-                                onClubHeadTrackingClick = {
-                                    navController.navigate("club_head")
-                                },
-                                onAICoachClick = { 
-                                    if (isPremium) {
-                                        // TODO: Show AI Coach Overlay within Analysis Screen
-                                        // navController.navigate("aiCoach") - DEPRECATED
-                                    } else {
-                                        navController.navigate("premium")
-                                    }
-                                },
-                                onComparisonClick = { navController.navigate("comparison") },
-                                onHistoryClick = {
-                                    if (isPremium) {
-                                        navController.navigate("history")
-                                    } else {
-                                        // Practiceユーザーには履歴機能を制限
-                                        scope.launch {
-                                            androidx.appcompat.app.AlertDialog.Builder(this@NewMainActivity)
-                                                .setTitle("機能制限")
-                                                .setMessage("履歴機能はアスリート版限定です")
-                                                .setPositiveButton("OK", null)
-                                                .setIcon(android.R.drawable.ic_lock_lock)
-                                                .show()
-                                        }
-                                    }
-                                },
-                                onPremiumClick = { navController.navigate("premium") },
-                                onSettingsClick = { navController.navigate("settings") },
-                                onLogout = {
-                                    scope.launch {
-                                        logoutUser()
-                                        isLoggedIn = false
-                                        navController.navigate("auth") {
-                                            popUpTo(0) { inclusive = true }
-                                        }
-                                    }
-                                },
-                                onRequestPlanSwitch = {
-                                    scope.launch {
-                                        val nextTier = when (planTier) {
-                                            com.golftrajectory.app.plan.Plan.PRACTICE -> com.golftrajectory.app.plan.Plan.ATHLETE
-                                            com.golftrajectory.app.plan.Plan.ATHLETE -> com.golftrajectory.app.plan.Plan.PRO
-                                            com.golftrajectory.app.plan.Plan.PRO -> com.golftrajectory.app.plan.Plan.PRACTICE
-                                        }
-                                        planManager.setPlan(nextTier)
-                                    }
-                                },
-                                onPlanBadgeLongPress = {
-                                    scope.launch {
-                                        val nextTier = when (planTier) {
-                                            com.golftrajectory.app.plan.Plan.PRACTICE -> com.golftrajectory.app.plan.Plan.ATHLETE
-                                            else -> com.golftrajectory.app.plan.Plan.PRACTICE
-                                        }
-                                        planManager.setPlan(nextTier)
-                                        Toast.makeText(
-                                            this@NewMainActivity,
-                                            "Debug: Plan switched to ${nextTier.name}",
-                                            Toast.LENGTH_SHORT
-                                        ).show()
-                                    }
-                                },
-                            )
-                        }
-
-                        // スマートAI解析画面
-                        composable("smart_ai") {
-                            SmartAIAnalysisScreen(
-                                onStartCamera = {
-                                    navController.navigate("camera")
-                                },
-                                onPickVideo = {
-                                    onVideoSelected = { uri ->
-                                        currentVideoUri = uri
-                                        navController.navigate("rearSwing")
-                                    }
-                                    videoPickerLauncher.launch("video/*")
-                                },
-                                onBack = { navController.popBackStack() }
+                                }
                             )
                         }
                         
-                        // 履歴画面
-                        composable("history") {
-                            val historyList by database.analysisHistoryDao()
-                                .getHistoryByUser(userPreferences.getUserId() ?: "guest")
-                                .collectAsState(initial = emptyList())
-                            
-                            HistoryScreen(
-                                historyList = historyList,
-                                isPremium = isPremium,
-                                onHistoryClick = { history ->
-                                    // 履歴データから分析結果を復元してAIコーチに遷移
-                                    try {
-                                        // スイングデータを復元
-                                        currentSwingData = com.swingtrace.aicoaching.domain.usecase.SwingData(
-                                            totalScore = history.totalScore,
-                                            backswingAngle = history.backswingAngle,
-                                            downswingSpeed = history.downswingSpeed,
-                                            hipRotation = history.hipRotation,
-                                            shoulderRotation = history.shoulderRotation,
-                                            headStability = history.headStability,
-                                            weightShift = history.weightTransfer,
-                                            swingPlane = history.swingPlane
-                                        )
-                                        
-                                        // プロ類似度を復元（保存されている場合）
-                                        if (history.topProName != null && history.topProSimilarity != null) {
-                                            val pro = com.swingtrace.aicoaching.analysis.ProSimilarityCalculator.getProByName(history.topProName)
-                                            if (pro != null) {
-                                                currentProSimilarity = com.swingtrace.aicoaching.analysis.ProSimilarityCalculator.SimilarityResult(
-                                                    pro = pro,
-                                                    similarity = history.topProSimilarity,
-                                                    breakdown = mapOf(
-                                                        "バックスイング" to 0.0,
-                                                        "ダウンスイング" to 0.0,
-                                                        "腰の回転" to 0.0,
-                                                        "肩の回転" to 0.0,
-                                                        "頭の安定性" to 0.0,
-                                                        "体重移動" to 0.0
-                                                    )
-                                                )
-                                            }
-                                        } else {
-                                            // プロ類似度を再計算
-                                            val similarities = com.swingtrace.aicoaching.analysis.ProSimilarityCalculator.calculateSimilarities(
-                                                backswingAngle = history.backswingAngle,
-                                                downswingSpeed = history.downswingSpeed,
-                                                hipRotation = history.hipRotation,
-                                                shoulderRotation = history.shoulderRotation,
-                                                headStability = history.headStability,
-                                                weightTransfer = history.weightTransfer
-                                            )
-                                            currentProSimilarity = similarities.firstOrNull()
-                                        }
-                                        
-                                        previousScore = null // 履歴の前回スコアは不明
-                                        
-                                        // TODO: Show AI Coach Overlay within Analysis Screen
-                                        // navController.navigate("aiCoach") - DEPRECATED
-                                        
-                                    } catch (e: Exception) {
-                                        android.widget.Toast.makeText(
-                                            this@NewMainActivity,
-                                            "データの読み込みに失敗しました: ${e.message}",
-                                            android.widget.Toast.LENGTH_SHORT
-                                        ).show()
-                                    }
-                                },
-                                onDeleteHistory = { history ->
-                                    // 履歴を削除
-                                    scope.launch {
-                                        try {
-                                            database.analysisHistoryDao().delete(history)
-                                            Toast.makeText(
-                                                this@NewMainActivity,
-                                                "履歴を削除しました",
-                                                Toast.LENGTH_SHORT
-                                            ).show()
-                                        } catch (e: Exception) {
-                                            Toast.makeText(
-                                                this@NewMainActivity,
-                                                "削除に失敗しました: ${e.message}",
-                                                Toast.LENGTH_SHORT
-                                            ).show()
-                                        }
-                                    }
-                                },
-                                onBack = {
-                                    navController.popBackStack()
+                        // 設定画面
+                        composable("settings") {
+                            SettingsScreen(
+                                onBack = { navController.popBackStack() },
+                                onMyBagClick = { navController.navigate("myBag") },
+                                userPreferences = userPreferences
+                            )
+                        }
+                        
+                        // My Bag画面
+                        composable("myBag") {
+                            MyBagScreen(
+                                userPreferences = userPreferences,
+                                onBack = { navController.popBackStack() },
+                                onSave = {
+                                    // 保存完了トースト
+                                    Toast.makeText(
+                                        this@NewMainActivity,
+                                        "クラブ設定を保存しました",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
                                 }
                             )
                         }
@@ -523,7 +361,27 @@ class NewMainActivity : ComponentActivity() {
                         // 設定画面
                         composable("settings") {
                             SettingsScreen(
-                                onBack = { navController.popBackStack() }
+                                onBack = { navController.popBackStack() },
+                                onMyBagClick = { navController.navigate("myBag") },
+                                userPreferences = userPreferences
+                            )
+                        }
+                        
+                        // My Bag画面
+                        composable("myBag") {
+                            MyBagScreen(
+                                userPreferences = userPreferences,
+                                onBack = { navController.popBackStack() },
+                                onSave = {
+                                    // 保存完了トースト
+                                    scope.launch {
+                                        Toast.makeText(
+                                            this@NewMainActivity,
+                                            "クラブ設定を保存しました",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
+                                }
                             )
                         }
                         

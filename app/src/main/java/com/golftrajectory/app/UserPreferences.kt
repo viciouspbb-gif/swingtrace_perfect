@@ -28,6 +28,8 @@ class UserPreferences(context: Context) {
         private const val KEY_AD_COUNT = "ad_count"
         private const val KEY_ANALYSIS_COUNT = "analysis_count"
         private const val KEY_COACHING_STYLE = "coaching_style"
+        private const val KEY_CAMERA_TUTORIAL_SHOWN = "camera_tutorial_shown"
+        private const val KEY_UNIT_SYSTEM = "unit_system"
         private const val KEY_TARGET_PRO = "target_pro"
         private const val KEY_HAS_SEEN_CAMERA_TUTORIAL = "has_seen_camera_tutorial"
         
@@ -293,7 +295,7 @@ class UserPreferences(context: Context) {
             gson.fromJson(json, type) ?: emptyList()
         } else {
             // 初回起動時はデフォルトセットを生成して保存
-            val defaultSet = DefaultClubSetFactory.createStandardSet()
+            val defaultSet = DefaultClubSetFactory.createStandardClubSet()
             saveClubSettings(defaultSet)
             defaultSet
         }
@@ -413,7 +415,7 @@ class UserPreferences(context: Context) {
      * クラブ設定をリセット（デフォルトセットに戻す）
      */
     fun resetClubSettings() {
-        val defaultSet = DefaultClubSetFactory.createStandardSet()
+        val defaultSet = DefaultClubSetFactory.createStandardClubSet()
         saveClubSettings(defaultSet)
         saveCurrentClubSet("デフォルトセット")
     }
@@ -422,7 +424,7 @@ class UserPreferences(context: Context) {
      * プレミアムクラブセットにアップグレード
      */
     fun upgradeToPremiumSet() {
-        val premiumSet = DefaultClubSetFactory.createPremiumSet()
+        val premiumSet = DefaultClubSetFactory.createProClubSet()
         saveClubSettings(premiumSet)
         saveCurrentClubSet("プレミアムセット")
     }
@@ -433,6 +435,39 @@ class UserPreferences(context: Context) {
     fun getRecommendedShaftFlex(): String {
         val swingSpeed = getSwingSpeed()
         return ClubSetUtils.recommendShaftFlex(swingSpeed).displayName
+    }
+    
+    /**
+     * 単位系を保存
+     */
+    fun saveUnitSystem(unitSystem: UnitSystem) {
+        prefs.edit().putString(KEY_UNIT_SYSTEM, unitSystem.name).apply()
+    }
+    
+    /**
+     * 単位系を取得
+     */
+    fun getUnitSystem(): UnitSystem {
+        val unitSystemName = prefs.getString(KEY_UNIT_SYSTEM, UnitSystem.METRIC.name)
+        return try {
+            UnitSystem.valueOf(unitSystemName ?: UnitSystem.METRIC.name)
+        } catch (e: IllegalArgumentException) {
+            UnitSystem.METRIC
+        }
+    }
+    
+    /**
+     * 単位系がメートル法かどうか
+     */
+    fun isMetric(): Boolean {
+        return getUnitSystem() == UnitSystem.METRIC
+    }
+    
+    /**
+     * 単位系がヤード・ポンド法かどうか
+     */
+    fun isImperial(): Boolean {
+        return getUnitSystem() == UnitSystem.IMPERIAL
     }
 }
 

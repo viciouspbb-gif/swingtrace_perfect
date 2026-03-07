@@ -85,7 +85,7 @@ class AnalyzeSwingUseCase(
                     swingPlane = swingData.swingPlane?.toString()
                 )
                 
-                aiManager.generateCoachingAdvice(
+                aiManager.getCoachingAdvice(
                     swingData = swingAnalysisData,
                     targetProName = targetProName
                 )
