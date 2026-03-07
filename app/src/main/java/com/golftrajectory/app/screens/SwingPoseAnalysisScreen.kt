@@ -9,6 +9,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -35,6 +37,11 @@ import com.golftrajectory.app.PoseDetector
 import com.golftrajectory.app.UsageManager
 import com.golftrajectory.app.plan.UserPlanManager
 import com.golftrajectory.app.logic.BiomechanicsFrame
+import com.golftrajectory.app.logic.SwingAnalysis3DEngine
+import com.golftrajectory.app.logic.SwingScore3D
+import com.golftrajectory.app.logic.KeyFrame
+import com.golftrajectory.app.logic.KeyFrameType
+import com.google.mediapipe.tasks.components.containers.Landmark
 import com.golftrajectory.app.ui.BiomechanicsHud
 import com.golftrajectory.app.utils.LockScreenOrientation
 import android.content.pm.ActivityInfo
@@ -56,6 +63,26 @@ import kotlin.math.sqrt
 import kotlin.math.abs
 
 /**
+ * スイング基準モデル - リッキーCTO定義
+ */
+object SwingStandardModel {
+    // 基準値と許容範囲
+    data class MetricStandard(
+        val ideal: Double,
+        val min: Double,
+        val max: Double,
+        val unit: String
+    )
+    
+    val HEAD_MOVEMENT = MetricStandard(2.0, 0.0, 5.0, "cm")
+    val SHOULDER_ROTATION = MetricStandard(100.0, 90.0, 110.0, "°")
+    val HIP_ROTATION = MetricStandard(40.0, 35.0, 45.0, "°")
+    val X_FACTOR = MetricStandard(60.0, 50.0, 65.0, "°")
+    val WEIGHT_SHIFT = MetricStandard(10.0, 8.0, 12.0, "cm")
+    val SHAFT_LEAN = MetricStandard(-8.0, -12.0, -5.0, "°")
+}
+
+/**
  * スイング姿勢分析画面（MediaPipe使用）- プロ仕様フルスクリーン版
  */
 @Composable
@@ -70,7 +97,8 @@ fun SwingPoseAnalysisScreen(
     onAICoachClick: (com.golftrajectory.app.SwingAnalysisResult) -> Unit = { result ->
         // AIコーチング呼び出し（スタンス情報は内部で自動検知）
         // TODO: AIコーチング画面に遷移
-    }
+    },
+    navController: androidx.navigation.NavController? = null
 ) {
     val context = LocalContext.current
     val activity = (context as? ComponentActivity)
@@ -141,8 +169,17 @@ fun SwingPoseAnalysisScreen(
     val poseDetector = remember { PoseDetector(context) }
     var isAnalyzing by remember { mutableStateOf(false) }
     var analysisProgress by remember { mutableStateOf(0f) }
-    var posePoints by remember { mutableStateOf<List<Offset>>(emptyList()) }
+    // 3D解析エンジン
+    val swingAnalysis3DEngine = remember { SwingAnalysis3DEngine() }
+    
+    // 3D解析データ
+    var all3DLandmarks by remember { mutableStateOf<List<List<Landmark>>>(emptyList()) }
+    var keyFrames by remember { mutableStateOf<List<KeyFrame>>(emptyList()) }
+    var swingScore3D by remember { mutableStateOf<SwingScore3D?>(null) }
+    
+    // 2D表示用（既存の骨格描画用）
     var allPoses by remember { mutableStateOf<List<List<Offset>>>(emptyList()) }
+    var posePoints by remember { mutableStateOf<List<Offset>>(emptyList()) }
     var frameDuration by remember { mutableStateOf(100L) }
     var analysisResult by remember { mutableStateOf<com.golftrajectory.app.SwingAnalysisResult?>(null) }
     val swingAnalyzer = remember { com.golftrajectory.app.PoseSwingAnalyzer() }
@@ -279,6 +316,7 @@ fun SwingPoseAnalysisScreen(
                 }
 
                 val detectedPoses = mutableListOf<List<Offset>>()
+                val detected3DLandmarks = mutableListOf<List<Landmark>>()
                 withContext(Dispatchers.Default) {
                     val retriever = MediaMetadataRetriever()
                     try {
@@ -313,6 +351,12 @@ fun SwingPoseAnalysisScreen(
                                             val landmarks = poseResult.landmarks()[0]
                                             val points = landmarks.map { Offset(it.x(), it.y()) }
                                             detectedPoses.add(points) // 座標変換は描画時に行う
+                                            
+                                            // 3Dランドマークを保存
+                                            if (poseResult.worldLandmarks().isNotEmpty()) {
+                                                val worldLandmarks = poseResult.worldLandmarks()[0]
+                                                detected3DLandmarks.add(worldLandmarks)
+                                            }
                                         }
                                     }
                                     
@@ -336,6 +380,14 @@ fun SwingPoseAnalysisScreen(
 
                 withContext(Dispatchers.Main) {
                     if (detectedPoses.isNotEmpty()) {
+                        // 3Dキーフレーム抽出と解析
+                        all3DLandmarks = detected3DLandmarks
+                        keyFrames = swingAnalysis3DEngine.extractKeyFrames(detected3DLandmarks)
+                        swingScore3D = swingAnalysis3DEngine.calculateScoreFromKeyFrames(keyFrames)
+                        
+                        // スタンス検知
+                        detectedStance = detectStance(detectedPoses)
+                        
                         // 第4層【静止始動の確認】
                         if (!hasStaticStart(detectedPoses)) {
                             errorMessage = "スイング開始前に静止状態を確認してください"
@@ -604,50 +656,265 @@ fun SwingPoseAnalysisScreen(
                         
                         // プランによる表示項目制御
                         if (isLitePlan) {
-                            // Practice版：基礎3点のみ
-                            Text(
-                                text = " プレミアム機能",
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF2196F3)
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = "詳細なバイオメカニクス分析は\nアスリート版・プロ版でご利用いただけます",
-                                fontSize = 14.sp,
-                                textAlign = TextAlign.Center,
-                                color = Color.Gray
-                            )
+                            // Practice版：頭移動・肩回転・腰回転の3項目のみ（Delta表示）
+                            
+                            // 色分け凡例
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceEvenly,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Text(
+                                        text = "🟢",
+                                        fontSize = 16.sp
+                                    )
+                                    Text(
+                                        text = "良好",
+                                        fontSize = 12.sp,
+                                        color = Color(0xFF4CAF50)
+                                    )
+                                }
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Text(
+                                        text = "🔴",
+                                        fontSize = 16.sp
+                                    )
+                                    Text(
+                                        text = "改善優先",
+                                        fontSize = 12.sp,
+                                        color = Color(0xFFF44336)
+                                    )
+                                }
+                            }
+                            
                             Spacer(modifier = Modifier.height(16.dp))
                             
-                            // 基礎3項目のみ表示
+                            // 総合スコア表示
                             AnalysisItem("スイングスコア", "${analysisResult?.score ?: 0}点")
                             AnalysisItem("姿勢評価", getPostureEvaluation(analysisResult?.score ?: 0))
-                            AnalysisItem("改善アドバイス", "プレミアム版で表示")
+                            
+                            Spacer(modifier = Modifier.height(16.dp))
+                            
+                            // 区切り線
+                            Divider(
+                                modifier = Modifier.fillMaxWidth(),
+                                color = Color.Gray,
+                                thickness = 1.dp
+                            )
+                            
+                            Spacer(modifier = Modifier.height(16.dp))
+                            
+                            // 3項目Delta分析
+                            val posePoints = allPoses.lastOrNull() ?: emptyList()
+                            
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                // 3Dスコアを使用してDelta表示
+                                swingScore3D?.let { score ->
+                                    // 頭移動
+                                    AnalysisDeltaItem(
+                                        label = "頭移動",
+                                        actualValue = score.headMovement,
+                                        standard = SwingStandardModel.HEAD_MOVEMENT
+                                    )
+                                    
+                                    // 肩回転
+                                    AnalysisDeltaItem(
+                                        label = "肩回転",
+                                        actualValue = score.shoulderRotation,
+                                        standard = SwingStandardModel.SHOULDER_ROTATION
+                                    )
+                                    
+                                    // 腰回転
+                                    AnalysisDeltaItem(
+                                        label = "腰回転", 
+                                        actualValue = score.hipRotation,
+                                        standard = SwingStandardModel.HIP_ROTATION
+                                    )
+                                } ?: run {
+                                    // フォールバック：2D計算
+                                    val headMovement = getHeadMovement(allPoses, userPreferences)
+                                    AnalysisDeltaItem(
+                                        label = "頭移動",
+                                        actualValue = headMovement,
+                                        standard = SwingStandardModel.HEAD_MOVEMENT
+                                    )
+                                    
+                                    val shoulderAngle = getShoulderRotation(posePoints)
+                                    AnalysisDeltaItem(
+                                        label = "肩回転",
+                                        actualValue = shoulderAngle,
+                                        standard = SwingStandardModel.SHOULDER_ROTATION
+                                    )
+                                    
+                                    val hipAngle = getHipRotation(posePoints)
+                                    AnalysisDeltaItem(
+                                        label = "腰回転", 
+                                        actualValue = hipAngle,
+                                        standard = SwingStandardModel.HIP_ROTATION
+                                    )
+                                }
+                            }
+                            
+                            Spacer(modifier = Modifier.height(24.dp))
+                            
+                            // アスリート版への誘導（一番下へ移動）
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = Color(0xFFE3F2FD) // 薄い青背景
+                                ),
+                                elevation = CardDefaults.cardElevation(
+                                    defaultElevation = 4.dp
+                                )
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(20.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Star,
+                                        contentDescription = "プレミアム",
+                                        tint = Color(0xFF1976D2),
+                                        modifier = Modifier.size(36.dp)
+                                    )
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    Text(
+                                        text = "詳しい原因分析とAI改善ドリルは\nアスリート版で利用できます",
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        textAlign = TextAlign.Center,
+                                        color = Color(0xFF1976D2)
+                                    )
+                                    Spacer(modifier = Modifier.height(16.dp))
+                                    Button(
+                                        onClick = { 
+                                            // アップグレード画面への遷移（暫定実装）
+                                            showAnalysisDialog = false
+                                            navController?.navigate("premium")
+                                        },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = Color(0xFF1976D2)
+                                        ),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text("アスリート版にアップグレード", color = Color.White)
+                                    }
+                                }
+                            }
                         } else {
-                            // アスリート版・プロ版：6項目すべて表示
-                            // 単位系を取得
-                            val unitSystem = userPreferences?.getUnitSystem() ?: UnitSystem.METRIC
-                            val stance = detectedStance ?: "RIGHT_HANDED"
-                            
-                            // バイオメカニクスデータを単位変換（関数内で自動変換）
-                            val headMovementValue = getHeadMovement(allPoses, userPreferences)
-                            val weightShiftValue = getWeightShift(allPoses, userPreferences)
-                            val shaftLeanValue = getShaftLean(posePoints)
-                            
-                            // スタンス連動型の符号変換を適用
-                            val adjustedShaftLean = adjustForStance(shaftLeanValue, stance, isShaftLean = true)
-                            val adjustedWeightShift = adjustForStance(weightShiftValue, stance, isShaftLean = false)
-                            
-                            val headMovementFormatted = "${String.format("%.1f", headMovementValue)} ${unitSystem.getLengthUnit()}"
-                            val weightShiftFormatted = "${String.format("%.1f", adjustedWeightShift)} ${unitSystem.getLengthUnit()}"
-                            
-                            AnalysisItem("肩の回転角", "${getShoulderRotation(posePoints)}°")
-                            AnalysisItem("腰の回転角", "${getHipRotation(posePoints)}°")
-                            AnalysisItem("X-Factor", "${getXFactor(posePoints)}°")
-                            AnalysisItem("頭の移動量", headMovementFormatted)
-                            AnalysisItem("体重移動", weightShiftFormatted)
-                            AnalysisItem("シャフトレイン", "${String.format("%.1f", adjustedShaftLean)}°")
+                            // アスリート版・プロ版：6項目フルDelta表示（3Dスコア使用）
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                swingScore3D?.let { score ->
+                                    // 頭移動
+                                    AnalysisDeltaItem(
+                                        label = "頭移動",
+                                        actualValue = score.headMovement,
+                                        standard = SwingStandardModel.HEAD_MOVEMENT
+                                    )
+                                    
+                                    // 肩回転
+                                    AnalysisDeltaItem(
+                                        label = "肩回転",
+                                        actualValue = score.shoulderRotation,
+                                        standard = SwingStandardModel.SHOULDER_ROTATION
+                                    )
+                                    
+                                    // 腰回転
+                                    AnalysisDeltaItem(
+                                        label = "腰回転", 
+                                        actualValue = score.hipRotation,
+                                        standard = SwingStandardModel.HIP_ROTATION
+                                    )
+                                    
+                                    // X-Factor
+                                    AnalysisDeltaItem(
+                                        label = "X-Factor",
+                                        actualValue = score.xFactor,
+                                        standard = SwingStandardModel.X_FACTOR
+                                    )
+                                    
+                                    // 体重移動
+                                    AnalysisDeltaItem(
+                                        label = "体重移動",
+                                        actualValue = score.weightShift,
+                                        standard = SwingStandardModel.WEIGHT_SHIFT
+                                    )
+                                    
+                                    // シャフトレイン
+                                    AnalysisDeltaItem(
+                                        label = "シャフトレイン",
+                                        actualValue = score.shaftLean,
+                                        standard = SwingStandardModel.SHAFT_LEAN
+                                    )
+                                } ?: run {
+                                    // フォールバック：2D計算
+                                    val posePoints = allPoses.lastOrNull() ?: emptyList()
+                                    val stance = detectedStance ?: "RIGHT_HANDED"
+                                    
+                                    val headMovementValue = getHeadMovement(allPoses, userPreferences)
+                                    val weightShiftValue = getWeightShift(allPoses, userPreferences)
+                                    val shaftLeanValue = getShaftLean(posePoints)
+                                    val adjustedShaftLean = adjustForStance(shaftLeanValue, stance, isShaftLean = true)
+                                    
+                                    // 頭移動
+                                    AnalysisDeltaItem(
+                                        label = "頭移動",
+                                        actualValue = headMovementValue,
+                                        standard = SwingStandardModel.HEAD_MOVEMENT
+                                    )
+                                    
+                                    // 肩回転
+                                    val shoulderAngle = getShoulderRotation(posePoints)
+                                    AnalysisDeltaItem(
+                                        label = "肩回転",
+                                        actualValue = shoulderAngle,
+                                        standard = SwingStandardModel.SHOULDER_ROTATION
+                                    )
+                                    
+                                    // 腰回転
+                                    val hipAngle = getHipRotation(posePoints)
+                                    AnalysisDeltaItem(
+                                        label = "腰回転", 
+                                        actualValue = hipAngle,
+                                        standard = SwingStandardModel.HIP_ROTATION
+                                    )
+                                    
+                                    // X-Factor
+                                    val xFactorValue = getXFactor(posePoints)
+                                    AnalysisDeltaItem(
+                                        label = "X-Factor",
+                                        actualValue = xFactorValue,
+                                        standard = SwingStandardModel.X_FACTOR
+                                    )
+                                    
+                                    // 体重移動
+                                    AnalysisDeltaItem(
+                                        label = "体重移動",
+                                        actualValue = weightShiftValue,
+                                        standard = SwingStandardModel.WEIGHT_SHIFT
+                                    )
+                                    
+                                    // シャフトレイン
+                                    AnalysisDeltaItem(
+                                        label = "シャフトレイン",
+                                        actualValue = adjustedShaftLean,
+                                        standard = SwingStandardModel.SHAFT_LEAN
+                                    )
+                                }
+                            }
                         }
                         
                         Spacer(modifier = Modifier.height(24.dp))
@@ -695,11 +962,6 @@ private fun DrawScope.drawMediaPipeSkeleton(
     // ※実際の信頼度はPoseDetectorから渡す必要があるため、ここではポイント数で簡易判定
     if (points.size < 33) {
         return // 信頼度不足 - 描画中止
-    }
-    
-    // 第2層【ゴルフ・アドレス検知】
-    if (!isGolfAddressPose(points)) {
-        return // ゴルフ構えではない - 描画中止
     }
     
     // 描画する接続（MediaPipe準拠）
@@ -896,6 +1158,70 @@ private fun AnalysisItem(label: String, value: String) {
             fontSize = 16.sp,
             fontWeight = FontWeight.Bold,
             color = Color(0xFF2196F3)
+        )
+    }
+}
+
+// Delta表示用の分析項目コンポーザブル
+@Composable
+private fun AnalysisDeltaItem(
+    label: String, 
+    actualValue: Double, 
+    standard: SwingStandardModel.MetricStandard
+) {
+    val delta = actualValue - standard.ideal
+    val isInRange = actualValue >= standard.min && actualValue <= standard.max
+    val deltaColor = if (isInRange) Color(0xFF4CAF50) else Color(0xFFF44336)
+    val deltaPrefix = if (delta >= 0) "+" else ""
+    
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = label,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Medium,
+                color = Color.Black
+            )
+            
+            Row(
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "${String.format("%.1f", actualValue)}${standard.unit}",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.Gray,
+                    modifier = Modifier.padding(end = 8.dp)
+                )
+                
+                Text(
+                    text = "(理想まで ${deltaPrefix}${String.format("%.1f", delta)}${standard.unit})",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = deltaColor
+                )
+                
+                Text(
+                    text = if (isInRange) " 🟢" else " 🔴",
+                    fontSize = 14.sp
+                )
+            }
+        }
+        
+        // 基準範囲表示
+        Text(
+            text = "許容範囲: ${String.format("%.1f", standard.min)}-${String.format("%.1f", standard.max)}${standard.unit}",
+            fontSize = 12.sp,
+            color = Color.Gray,
+            modifier = Modifier.padding(start = 8.dp)
         )
     }
 }
@@ -1119,6 +1445,46 @@ private fun getShaftLean(points: List<Offset>): Double {
         val normalizedAngle = shaftLeanAngle * (shoulderWidth / 0.2f) // 0.2は標準的な肩幅の正規化値
         
         return normalizedAngle // 符号付きの角度を返す
+    } catch (e: Exception) {
+        return 0.0
+    }
+}
+
+// 膝の角度を計算（右膝またはスタンスに応じたリード足の膝）
+private fun getKneeAngle(points: List<Offset>, stance: String = "RIGHT_HANDED"): Double {
+    if (points.size < 33) return 0.0
+    
+    try {
+        // スタンスに応じてリード足の膝を選択
+        val (hipIndex, kneeIndex, ankleIndex) = if (stance == "LEFT_HANDED") {
+            // 左打ち：左足がリード足
+            Triple(23, 25, 27) // 左腰、左膝、左足首
+        } else {
+            // 右打ち：右足がリード足
+            Triple(24, 26, 28) // 右腰、右膝、右足首
+        }
+        
+        val hip = points[hipIndex]
+        val knee = points[kneeIndex]
+        val ankle = points[ankleIndex]
+        
+        // 3点間のベクトルを計算
+        val vector1 = Offset(hip.x - knee.x, hip.y - knee.y) // 膝→腰
+        val vector2 = Offset(ankle.x - knee.x, ankle.y - knee.y) // 膝→足首
+        
+        // 2つのベクトル間の角度を計算（内積公式）
+        val dotProduct = vector1.x * vector2.x + vector1.y * vector2.y
+        val magnitude1 = kotlin.math.sqrt((vector1.x * vector1.x + vector1.y * vector1.y).toDouble())
+        val magnitude2 = kotlin.math.sqrt((vector2.x * vector2.x + vector2.y * vector2.y).toDouble())
+        
+        if (magnitude1 == 0.0 || magnitude2 == 0.0) return 0.0
+        
+        val cosAngle = dotProduct / (magnitude1 * magnitude2)
+        val angleRadians = kotlin.math.acos(cosAngle.coerceIn(-1.0, 1.0))
+        val angleDegrees = (angleRadians * 180.0 / kotlin.math.PI)
+        
+        // 膝の屈曲角度として返す（180.0から引く）
+        return 180.0 - angleDegrees
     } catch (e: Exception) {
         return 0.0
     }

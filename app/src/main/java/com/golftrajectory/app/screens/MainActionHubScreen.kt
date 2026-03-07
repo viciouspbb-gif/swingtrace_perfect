@@ -1,7 +1,6 @@
 package com.golftrajectory.app.screens
 
 import android.net.Uri
-import android.os.ParcelFileDescriptor
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -9,8 +8,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CameraAlt
-import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -18,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -25,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.golftrajectory.app.UsageManager
+import com.golftrajectory.app.plan.Plan
 
 /**
  * MainActionHubScreen - アプリ起動時のエントリポイント
@@ -36,7 +36,8 @@ fun MainActionHubScreen(
     navController: NavController,
     userName: String = "Guest",
     onVideoSelected: (Uri) -> Unit,
-    onCameraClick: () -> Unit
+    onCameraClick: () -> Unit,
+    isAthlete: Boolean = false
 ) {
     val context = LocalContext.current
     val usageManager = remember { UsageManager(context) }
@@ -91,17 +92,6 @@ fun MainActionHubScreen(
             )
             
             Spacer(modifier = Modifier.height(16.dp))
-            
-            // サブタイトル
-            Text(
-                text = "スマートAI分析：肩・腰・膝の3点を分析します",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Medium,
-                color = Color(0xFFB0B0B0),
-                textAlign = TextAlign.Center
-            )
-            
-            Spacer(modifier = Modifier.height(48.dp))
             
             // 撮影ボタン
             Card(
@@ -163,6 +153,17 @@ fun MainActionHubScreen(
                     }
                 }
             }
+            
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            // キャッチコピー（撮影ボタン付近）
+            Text(
+                text = "スマートAI分析：肩・腰・膝の3点を精密解析",
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFFE0E0E0),
+                textAlign = TextAlign.Center
+            )
             
             Spacer(modifier = Modifier.height(24.dp))
             
@@ -229,16 +230,172 @@ fun MainActionHubScreen(
             
             Spacer(modifier = Modifier.height(48.dp))
             
-            // 利用回数表示
-            val remainingUsage = usageManager.getRemainingCount()
-            Text(
-                text = "残り利用回数: ${remainingUsage}回",
-                fontSize = 14.sp,
-                color = Color(0xFF808080),
-                textAlign = TextAlign.Center
-            )
+            // アスリート専用ボタン群
+            if (isAthlete) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Accountボタン
+                    AthleteActionButton(
+                        icon = Icons.Default.AccountCircle,
+                        label = "Account",
+                        onClick = { navController.navigate("profile") }
+                    )
+                    
+                    // Historyボタン
+                    AthleteActionButton(
+                        icon = Icons.Default.History,
+                        label = "History",
+                        onClick = { navController.navigate("history") }
+                    )
+                    
+                    // MY BAGボタン
+                    AthleteActionButton(
+                        icon = Icons.Default.SportsGolf,
+                        label = "MY BAG",
+                        onClick = { navController.navigate("myBag") }
+                    )
+                }
+            } else {
+                // Practiceユーザー向けの制限付きボタン
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Accountボタン（制限付き）
+                    RestrictedAthleteActionButton(
+                        icon = Icons.Default.AccountCircle,
+                        label = "Account",
+                        onClick = { showAthleteUpgradeDialog(context) }
+                    )
+                    
+                    // Historyボタン（制限付き）
+                    RestrictedAthleteActionButton(
+                        icon = Icons.Default.History,
+                        label = "History",
+                        onClick = { showAthleteUpgradeDialog(context) }
+                    )
+                    
+                    // MY BAGボタン（制限付き）
+                    RestrictedAthleteActionButton(
+                        icon = Icons.Default.SportsGolf,
+                        label = "MY BAG",
+                        onClick = { showAthleteUpgradeDialog(context) }
+                    )
+                }
+            }
         }
     }
+}
+
+/**
+ * アスリート専用アクションボタン
+ */
+@Composable
+private fun AthleteActionButton(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit
+) {
+    Column(
+        modifier = Modifier.padding(8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        IconButton(
+            onClick = onClick,
+            modifier = Modifier
+                .size(56.dp)
+                .background(
+                    Color(0xFF2C2C2C),
+                    RoundedCornerShape(28.dp)
+                )
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                tint = Color.White,
+                modifier = Modifier.size(28.dp)
+            )
+        }
+        
+        Spacer(modifier = Modifier.height(8.dp))
+        
+        Text(
+            text = label,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+            color = Color(0xFFB0B0B0)
+        )
+    }
+}
+
+/**
+ * 制限付きアスリートアクションボタン（Practiceユーザー用）
+ */
+@Composable
+private fun RestrictedAthleteActionButton(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit
+) {
+    Column(
+        modifier = Modifier.padding(8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(
+            modifier = Modifier.size(56.dp)
+        ) {
+            IconButton(
+                onClick = onClick,
+                modifier = Modifier
+                    .size(56.dp)
+                    .background(
+                        Color(0xFF1A1A1A),
+                        RoundedCornerShape(28.dp)
+                    )
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = label,
+                    tint = Color(0xFF666666),
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+            
+            // 鍵アイコンを右下に重ねる
+            Icon(
+                imageVector = Icons.Default.Lock,
+                contentDescription = "制限",
+                tint = Color(0xFF888888),
+                modifier = Modifier
+                    .size(16.dp)
+                    .align(Alignment.BottomEnd)
+            )
+        }
+        
+        Spacer(modifier = Modifier.height(8.dp))
+        
+        Text(
+            text = label,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+            color = Color(0xFF666666)
+        )
+    }
+}
+
+/**
+ * アスリート版アップグレードダイアログ表示
+ */
+private fun showAthleteUpgradeDialog(context: android.content.Context) {
+    Toast.makeText(
+        context,
+        "アスリート版限定です",
+        Toast.LENGTH_SHORT
+    ).show()
 }
 
 /**

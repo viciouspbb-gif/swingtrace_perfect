@@ -6,13 +6,19 @@ import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -23,7 +29,6 @@ import com.golftrajectory.app.plan.Plan
 import com.swingtrace.aicoaching.api.*
 import com.swingtrace.aicoaching.repository.SwingAnalysisRepository
 import com.swingtrace.aicoaching.screens.AnalysisResultScreen
-import com.swingtrace.aicoaching.screens.AuthScreen
 import com.swingtrace.aicoaching.screens.AutoTrajectoryScreen
 import com.swingtrace.aicoaching.screens.EnhancedCameraScreen
 import com.swingtrace.aicoaching.screens.HistoryScreen
@@ -148,8 +153,6 @@ class NewMainActivity : ComponentActivity() {
                 var aiCoaching by remember { mutableStateOf<AICoachingResponse?>(null) }
                 var currentVideoUri by remember { mutableStateOf<Uri?>(null) }
                 var isAnalyzing by remember { mutableStateOf(false) }
-                var isLoggedIn by remember { mutableStateOf(userPreferences.isLoggedIn()) }
-                var isGuest by remember { mutableStateOf(userPreferences.isGuest()) }
                 
                 // UI状態
                 var isMenuExpanded by remember { mutableStateOf(false) }
@@ -179,32 +182,8 @@ class NewMainActivity : ComponentActivity() {
                 ) {
                     NavHost(
                         navController = navController,
-                        startDestination = if (isLoggedIn || isGuest) "home" else "auth"
+                        startDestination = "home"
                     ) {
-                        // 認証画面
-                        composable("auth") {
-                            AuthScreen(
-                                onLoginSuccess = {
-                                    isLoggedIn = true
-                                    navController.navigate("home") {
-                                        popUpTo("auth") { inclusive = true }
-                                    }
-                                },
-                                onLogin = { email, password ->
-                                    loginUser(email, password)
-                                },
-                                onRegister = { email, password, name ->
-                                    registerUser(email, password, name)
-                                },
-                                onGuestMode = {
-                                    userPreferences.setGuestMode()
-                                    isGuest = true
-                                    navController.navigate("home") {
-                                        popUpTo("auth") { inclusive = true }
-                                    }
-                                }
-                            )
-                        }
                         
                         // ホーム画面（一本化されたエントリポイント）
                         composable("home") {
@@ -217,8 +196,21 @@ class NewMainActivity : ComponentActivity() {
                                 },
                                 onCameraClick = {
                                     navController.navigate("camera")
-                                }
+                                },
+                                isAthlete = planTier != com.golftrajectory.app.plan.Plan.PRACTICE
                             )
+                        }
+                        
+                        // スイング分析画面
+                        composable("swing_analysis") {
+                            currentVideoUri?.let { uri ->
+                                SwingPoseAnalysisScreen(
+                                    videoUri = uri,
+                                    onBack = { navController.popBackStack() },
+                                    planTier = planTier,
+                                    navController = navController
+                                )
+                            }
                         }
                         
                         // 設定画面
@@ -244,6 +236,56 @@ class NewMainActivity : ComponentActivity() {
                                     ).show()
                                 }
                             )
+                        }
+                        
+                        // 履歴画面
+                        composable("history") {
+                            // スタブ画面（暫定実装）
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Text(
+                                        text = "履歴画面",
+                                        fontSize = 24.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Spacer(modifier = Modifier.height(16.dp))
+                                    Button(
+                                        onClick = { navController.popBackStack() }
+                                    ) {
+                                        Text("戻る")
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // プロファイル画面
+                        composable("profile") {
+                            // スタブ画面（暫定実装）
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Text(
+                                        text = "プロファイル画面",
+                                        fontSize = 24.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Spacer(modifier = Modifier.height(16.dp))
+                                    Button(
+                                        onClick = { navController.popBackStack() }
+                                    ) {
+                                        Text("戻る")
+                                    }
+                                }
+                            }
                         }
                         
                         // プレミアム画面
