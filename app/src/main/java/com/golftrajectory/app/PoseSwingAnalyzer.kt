@@ -1,20 +1,24 @@
 package com.golftrajectory.app
 
 import androidx.compose.ui.geometry.Offset
+import android.util.Log
+import com.google.mediapipe.tasks.components.containers.Landmark
 import kotlin.math.*
 
 /**
- * MediaPipe Poseを使ったスイング分析
+ * MediaPipe Poseを使ったスイング分析（統合エンジン対応版）
  */
 class PoseSwingAnalyzer {
-
+    
+    private val integratedAnalyzer = IntegratedSwingAnalyzer()
+    
     private data class SwingFrames(
         val addressIndex: Int,
         val topIndex: Int
     )
     
     /**
-     * 全フレームの姿勢からスイングを分析
+     * 全フレームの姿勢からスイングを分析（worldLandmarks優先）
      */
     fun analyze(allPoses: List<List<Offset>>): SwingAnalysisResult {
         if (allPoses.isEmpty()) {
@@ -31,22 +35,12 @@ class PoseSwingAnalyzer {
             )
         }
         
-        // バックスイング角度を計算
+        // 従来の2Dベース計算（フォールバック用）
         val backswingAngle = calculateBackswingAngle(allPoses)
-        
-        // ダウンスイング速度を計算
         val downswingSpeed = calculateDownswingSpeed(allPoses)
-        
-        // 腰の回転を計算
         val hipRotation = calculateHipRotation(allPoses)
-        
-        // 肩の回転を計算
         val shoulderRotation = calculateShoulderRotation(allPoses)
-        
-        // 頭の安定性を計算
         val headStability = calculateHeadStability(allPoses)
-        
-        // 体重移動を計算
         val weightTransfer = calculateWeightTransfer(allPoses)
         
         // スイングプレーンを判定
@@ -83,6 +77,86 @@ class PoseSwingAnalyzer {
             score = score,
             estimatedDistance = estimatedDistance
         )
+    }
+    
+    /**
+     * worldLandmarksを使用した高精度幾何計算（統合エンジン使用）
+     */
+    fun analyzeWithWorldLandmarks(allWorldLandmarks: List<Pair<List<Landmark>, Long>>): SwingAnalysisResult {
+        if (allWorldLandmarks.isEmpty()) {
+            Log.w("SwingTrace", "No worldLandmarks provided")
+            return SwingAnalysisResult(
+                backswingAngle = 0f,
+                downswingSpeed = 0f,
+                hipRotation = 0f,
+                shoulderRotation = 0f,
+                headStability = 0f,
+                weightTransfer = 0f,
+                swingPlane = "不明",
+                score = 0,
+                estimatedDistance = 0f
+            )
+        }
+        
+        try {
+            // 統合エンジンで解析実行
+            val integratedResult = integratedAnalyzer.analyzeSwing(allWorldLandmarks, null)
+            
+            // 既存のSwingAnalysisResult形式に変換
+            val headStability = calculateHeadStabilityFromCm(integratedResult.headMoveCm)
+            val totalScore = calculateTotalScore(integratedResult)
+            
+            Log.i("SwingTrace", "Integrated analysis completed - Head: ${"%.1f".format(integratedResult.headMoveCm)}cm, Shoulder: ${"%.1f".format(integratedResult.shoulderRotationDeg)}°, Hip: ${"%.1f".format(integratedResult.hipRotationDeg)}°, X-Factor: ${"%.1f".format(integratedResult.xFactorDeg)}°")
+            
+            return SwingAnalysisResult(
+                backswingAngle = 0f, // 統合エンジンでは使用しない
+                downswingSpeed = 0f,
+                hipRotation = integratedResult.hipRotationDeg.toFloat(),
+                shoulderRotation = integratedResult.shoulderRotationDeg.toFloat(),
+                headStability = headStability,
+                weightTransfer = integratedResult.weightShiftCm.toFloat(),
+                swingPlane = determineSwingPlane(integratedResult.shoulderRotationDeg.toFloat()),
+                score = totalScore,
+                estimatedDistance = 0f
+            )
+            
+        } catch (e: Exception) {
+            Log.e("SwingTrace", "Error in integrated analysis: ${e.message}", e)
+            return createFallbackResult()
+        }
+    }
+    
+    /**
+     * 総合スコア計算（統合エンジン結果使用）
+     */
+    private fun calculateTotalScore(result: IntegratedSwingAnalyzer.SwingAnalysisResult): Int {
+        val headScore = calculateHeadStabilityFromCm(result.headMoveCm)
+        val shoulderScore = calculateRotationScore(result.shoulderRotationDeg, 100.0, 90.0, 110.0)
+        val hipScore = calculateRotationScore(result.hipRotationDeg, 40.0, 35.0, 45.0)
+        val xFactorScore = calculateRotationScore(result.xFactorDeg, 60.0, 50.0, 65.0)
+        val weightScore = calculateRotationScore(result.weightShiftCm, 10.0, 8.0, 12.0)
+        val shaftScore = calculateShaftLeanScore(result.shaftLeanDeg)
+        
+        return (
+            headScore * 0.2f +
+            shoulderScore * 0.2f +
+            hipScore * 0.15f +
+            xFactorScore * 0.15f +
+            weightScore * 0.15f +
+            shaftScore * 0.15f
+        ).toInt().coerceIn(0, 100)
+    }
+    
+    /**
+     * シャフトリーンスコア計算
+     */
+    private fun calculateShaftLeanScore(shaftLeanDeg: Double): Float {
+        return when {
+            shaftLeanDeg in -12.0..-5.0 -> 100f
+            shaftLeanDeg in -15.0..-3.0 -> 80f
+            shaftLeanDeg in -18.0..0.0 -> 60f
+            else -> 40f
+        }
     }
     
     /**
@@ -469,43 +543,77 @@ class PoseSwingAnalyzer {
     }
     
     /**
-     * アドバイスを生成
+     * 頭移動(cm)から安定性スコアを計算
+     */
+    private fun calculateHeadStabilityFromCm(headMoveCm: Double): Float {
+        return when {
+            headMoveCm <= 2.0 -> 100f
+            headMoveCm <= 5.0 -> 90f - ((headMoveCm - 2.0) * 6.67f).toFloat()
+            headMoveCm <= 10.0 -> 70f - ((headMoveCm - 5.0) * 6f).toFloat()
+            headMoveCm <= 20.0 -> 40f - ((headMoveCm - 10.0) * 2f).toFloat()
+            else -> 0f
+        }
+    }
+    
+    /**
+     * 回転角度からスコアを計算
+     */
+    private fun calculateRotationScore(rotationDeg: Double, ideal: Double, min: Double, max: Double): Float {
+        return when {
+            rotationDeg in (min - 5)..(max + 5) -> 100f
+            rotationDeg < min -> {
+                val diff = min - rotationDeg
+                (100f - (diff * 2f).toFloat()).coerceIn(0f, 100f)
+            }
+            rotationDeg > max -> {
+                val diff = rotationDeg - max
+                (100f - (diff * 2f).toFloat()).coerceIn(0f, 100f)
+            }
+            else -> 100f
+        }
+    }
+    
+    /**
+     * フォールバック結果を生成
+     */
+    private fun createFallbackResult(): SwingAnalysisResult {
+        return SwingAnalysisResult(
+            backswingAngle = 0f,
+            downswingSpeed = 0f,
+            hipRotation = 0f,
+            shoulderRotation = 0f,
+            headStability = 0f,
+            weightTransfer = 0f,
+            swingPlane = "不明",
+            score = 0,
+            estimatedDistance = 0f
+        )
+    }
+    
+    /**
+     * アドバイスを生成（worldLandmarks対応版）
      */
     fun getAdvice(result: SwingAnalysisResult): List<String> {
         val advice = mutableListOf<String>()
         
-        // バックスイング角度（理想: 60-85°）
+        // 頭移動（理想: 0-5cm）
         when {
-            result.backswingAngle < 60 -> advice.add("💡 バックスイングをもう少し大きく取りましょう（理想: 60-85°）")
-            result.backswingAngle > 90 -> advice.add("⚠️ バックスイングが大きすぎます（理想: 60-85°）")
+            result.headStability < 70 -> advice.add("💡 頭の動きが大きいです。安定させましょう（理想: 0-5cm）")
+            result.headStability >= 90 -> advice.add("👍 頭の安定性が素晴らしいです！")
         }
         
-        // ダウンスイング速度
-        if (result.downswingSpeed < 40) {
-            advice.add("💡 ダウンスイングのスピードを上げましょう")
-        }
-        
-        // 腰の回転（理想: 35-50°）
+        // 腰の回転（理想: 35-45°）
         when {
-            result.hipRotation < 30 -> advice.add("💡 腰の回転を意識しましょう（理想: 35-50°）")
-            result.hipRotation > 55 -> advice.add("⚠️ 腰の回転が大きすぎます（理想: 35-50°）")
+            result.hipRotation < 30 -> advice.add("💡 腰の回転を意識しましょう（理想: 35-45°）")
+            result.hipRotation > 55 -> advice.add("⚠️ 腰の回転が大きすぎます（理想: 35-45°）")
+            result.hipRotation in 35.0..45.0 -> advice.add("� 腰の回転が良好です！")
         }
         
-        // 肩の回転（理想: 50-70°）
+        // 肩の回転（理想: 90-110°）
         when {
-            result.shoulderRotation < 45 -> advice.add("💡 肩の回転を大きくしましょう（理想: 50-70°）")
-            result.shoulderRotation > 75 -> advice.add("⚠️ 肩の回転が大きすぎます（理想: 50-70°）")
-        }
-        
-        // 頭の安定性
-        if (result.headStability < 70) {
-            advice.add("💡 頭を動かさないように意識しましょう")
-        }
-        
-        // 体重移動
-        when {
-            result.weightTransfer < 20 -> advice.add("💡 体重移動を意識しましょう")
-            result.weightTransfer > 60 -> advice.add("⚠️ 体重移動が大きすぎます")
+            result.shoulderRotation < 80 -> advice.add("💡 肩の回転を大きくしましょう（理想: 90-110°）")
+            result.shoulderRotation > 120 -> advice.add("⚠️ 肩の回転が大きすぎます（理想: 90-110°）")
+            result.shoulderRotation in 90.0..110.0 -> advice.add("👍 肩の回転が良好です！")
         }
         
         // スイングプレーン
