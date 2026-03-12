@@ -1,0 +1,18 @@
+# クラブヘッド検出 - 拡張データセット
+path: C:\Users\katsunori\CascadeProjects\SwingTraceWithAICoaching\dataset\augmented
+train: images
+val: images
+
+nc: 1
+names: ['clubhead']
+
+# データ拡張設定（トレーニング時）
+augment: true
+hsv_h: 0.015
+hsv_s: 0.7
+hsv_v: 0.4
+degrees: 10.0
+translate: 0.1
+scale: 0.5
+fliplr: 0.5
+mosaic: 1.0

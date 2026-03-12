@@ -1,0 +1,25 @@
+# YOLOv8 クラブヘッド検出データセット設定
+
+# パス設定
+path: ./dataset
+train: images/train
+val: images/val
+
+# クラス設定
+nc: 1  # クラス数
+names: ['clubhead']  # クラス名
+
+# データ拡張（オプション）
+augment: true
+hsv_h: 0.015  # 色相
+hsv_s: 0.7    # 彩度
+hsv_v: 0.4    # 明度
+degrees: 10.0  # 回転
+translate: 0.1 # 平行移動
+scale: 0.5     # スケール
+shear: 0.0     # せん断
+perspective: 0.0  # 透視変換
+flipud: 0.0    # 上下反転
+fliplr: 0.5    # 左右反転
+mosaic: 1.0    # モザイク拡張
+mixup: 0.0     # ミックスアップ
